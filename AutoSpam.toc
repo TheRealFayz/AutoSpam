@@ -1,0 +1,8 @@
+## Interface: 11200
+## Title: AutoSpam
+## Notes: Automatically post messages at intervals
+## Author: Fayz
+## Version: 1.0
+## SavedVariables: AutoSpamDB
+
+AutoSpam.lua
