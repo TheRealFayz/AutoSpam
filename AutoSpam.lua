@@ -140,6 +140,11 @@ function AutoSpam:CreateSettingsFrame()
     title:SetPoint("TOP", frame, "TOP", 0, -20)
     title:SetText("AutoSpam")
     
+    -- Countdown Timer
+    local timerText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    timerText:SetPoint("TOP", title, "BOTTOM", 0, -5)
+    timerText:SetText("Next post in: --:--")
+    
     -- Create scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "AutoSpamScrollFrame", frame)
     scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -45)
@@ -234,6 +239,16 @@ function AutoSpam:CreateSettingsFrame()
     debugLabel:SetPoint("LEFT", debugCheck, "RIGHT", 5, 0)
     debugLabel:SetText("Debug Mode")
     
+    -- Start/Stop Button (next to debug checkbox)
+    local toggleButton = CreateFrame("Button", "AutoSpamToggleButton", content, "UIPanelButtonTemplate")
+    toggleButton:SetWidth(100)
+    toggleButton:SetHeight(25)
+    toggleButton:SetPoint("LEFT", debugLabel, "RIGHT", 15, 0)
+    toggleButton:SetText(self.db.enabled and "Stop Posting" or "Start Posting")
+    toggleButton:SetScript("OnClick", function()
+        AutoSpam:TogglePosting()
+    end)
+    
     debugCheck:SetScript("OnClick", function()
         AutoSpamDB.debugMode = this:GetChecked() and true or false
         if AutoSpamDB.debugMode then
@@ -281,6 +296,20 @@ function AutoSpam:CreateSettingsFrame()
         local value = this:GetValue()
         AutoSpamDB.interval = value
         intervalText:SetText(AutoSpam:FormatTime(value))
+        
+        -- Update timer text
+        if AutoSpam.TimerText then
+            if AutoSpam.db and AutoSpam.db.enabled then
+                local remaining = AutoSpam.db.interval - AutoSpam.timeSincePost
+                local minutes = math.floor(remaining / 60)
+                local seconds = remaining - (minutes * 60)
+                AutoSpam.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
+            else
+                local minutes = math.floor(value / 60)
+                local seconds = value - (minutes * 60)
+                AutoSpam.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
+            end
+        end
     end)
     
     yOffset = yOffset - 45
@@ -505,16 +534,6 @@ function AutoSpam:CreateSettingsFrame()
     
     yOffset = yOffset - 38
     
-    -- Start/Stop Button
-    local toggleButton = CreateFrame("Button", "AutoSpamToggleButton", content, "UIPanelButtonTemplate")
-    toggleButton:SetWidth(180)
-    toggleButton:SetHeight(35)
-    toggleButton:SetPoint("TOPLEFT", content, "TOPLEFT", 100, yOffset)
-    toggleButton:SetText(self.db.enabled and "Stop Posting" or "Start Posting")
-    toggleButton:SetScript("OnClick", function()
-        AutoSpam:TogglePosting()
-    end)
-    
     -- Close Button
     local closeButton = CreateFrame("Button", "AutoSpamCloseButton", frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
@@ -533,6 +552,7 @@ function AutoSpam:CreateSettingsFrame()
     self.ChannelDropdown = channelDropdown
     self.CustomChannelBox = customChannelBox
     self.ToggleButton = toggleButton
+    self.TimerText = timerText
     
     -- Initialize channel dropdown with error protection
     local success, err = pcall(function()
@@ -602,6 +622,20 @@ function AutoSpam:ToggleSettingsFrame()
         self.SettingsFrame:Show()
         self:UpdateActiveMessageList()
         self:LoadCurrentMessage()
+        
+        -- Update timer text
+        if self.TimerText then
+            if self.db.enabled then
+                local remaining = self.db.interval - self.timeSincePost
+                local minutes = math.floor(remaining / 60)
+                local seconds = remaining - (minutes * 60)
+                self.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
+            else
+                local minutes = math.floor(self.db.interval / 60)
+                local seconds = self.db.interval - (minutes * 60)
+                self.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
+            end
+        end
     end
 end
 
@@ -841,6 +875,20 @@ function AutoSpam:TogglePosting()
     else
         DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Stopped posting.", 1, 1, 0)
     end
+    
+    -- Update timer text
+    if self.TimerText then
+        if self.db.enabled then
+            local remaining = self.db.interval - self.timeSincePost
+            local minutes = math.floor(remaining / 60)
+            local seconds = remaining - (minutes * 60)
+            self.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
+        else
+            local minutes = math.floor(self.db.interval / 60)
+            local seconds = self.db.interval - (minutes * 60)
+            self.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
+        end
+    end
 end
 
 function AutoSpam:PostRandomMessage()
@@ -926,6 +974,20 @@ local isInitialized = false
 
 local updateTimer = 0
 eventFrame:SetScript("OnUpdate", function()
+    -- Update timer text if frame is visible
+    if AutoSpam.TimerText and AutoSpam.SettingsFrame and AutoSpam.SettingsFrame:IsVisible() then
+        if AutoSpam.db and AutoSpam.db.enabled then
+            local remaining = AutoSpam.db.interval - AutoSpam.timeSincePost
+            local minutes = math.floor(remaining / 60)
+            local seconds = remaining - (minutes * 60)
+            AutoSpam.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
+        else
+            local minutes = math.floor(AutoSpam.db.interval / 60)
+            local seconds = AutoSpam.db.interval - (minutes * 60)
+            AutoSpam.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
+        end
+    end
+    
     if not AutoSpam.db or not AutoSpam.db.enabled then
         return
     end
