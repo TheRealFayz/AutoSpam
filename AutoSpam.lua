@@ -20,6 +20,8 @@ function AutoSpam:Initialize()
     end
     
     self.db = AutoSpamDB
+    -- Always start disabled on login/reload
+    self.db.enabled = false
     self.currentMessageIndex = 1
     self.timeSincePost = 0
 end
@@ -140,11 +142,6 @@ function AutoSpam:CreateSettingsFrame()
     title:SetPoint("TOP", frame, "TOP", 0, -20)
     title:SetText("AutoSpam")
     
-    -- Countdown Timer
-    local timerText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    timerText:SetPoint("TOP", title, "BOTTOM", 0, -5)
-    timerText:SetText("Next post in: --:--")
-    
     -- Create scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "AutoSpamScrollFrame", frame)
     scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -45)
@@ -248,6 +245,11 @@ function AutoSpam:CreateSettingsFrame()
     toggleButton:SetScript("OnClick", function()
         AutoSpam:TogglePosting()
     end)
+    
+    -- Countdown Timer (next to button)
+    local timerText = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    timerText:SetPoint("LEFT", toggleButton, "RIGHT", 10, 0)
+    timerText:SetText("Interval: --:--")
     
     debugCheck:SetScript("OnClick", function()
         AutoSpamDB.debugMode = this:GetChecked() and true or false
