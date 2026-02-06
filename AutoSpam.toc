@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: AutoSpam
-## Notes: Automatically post messages at intervals
+## Notes: Automatically post weighted messages to multiple channels with customizable intervals
 ## Author: Fayz
-## Version: 1.0
+## Version: 1.1
 ## SavedVariables: AutoSpamDB
 
 AutoSpam.lua
