@@ -179,6 +179,22 @@ function AutoSpam:CreateSettingsFrame()
     local closeButton = CreateFrame("Button", "AutoSpamCloseButton", frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
     closeButton:SetScript("OnClick", function()
+        -- Close all edit windows
+        if AutoSpam.EditFrames then
+            for _, editFrame in ipairs(AutoSpam.EditFrames) do
+                if editFrame then
+                    editFrame:Hide()
+                end
+            end
+        end
+        
+        -- Close help window if open
+        local helpFrame = getglobal("AutoSpamHelpFrame")
+        if helpFrame then
+            helpFrame:Hide()
+        end
+        
+        -- Close main window
         frame:Hide()
     end)
     
