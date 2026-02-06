@@ -584,21 +584,21 @@ function AutoSpam:RemoveMessage(messageName)
 end
 
 function AutoSpam:OpenEditWindow(messageName)
+    -- Initialize edit frames table if needed
+    if not self.EditFrames then
+        self.EditFrames = {}
+    end
+    
+    -- Close ALL tracked edit windows first
+    for _, frame in ipairs(self.EditFrames) do
+        if frame and frame:IsVisible() then
+            frame:Hide()
+        end
+    end
+    
     -- Sanitize message name for frame name (remove spaces and special chars)
     local sanitizedName = string.gsub(messageName, "[^%w]", "")
     local frameName = "AutoSpamEditFrame_" .. sanitizedName
-    
-    -- Close all other edit windows first
-    for _, msg in ipairs(self.db.messages) do
-        local otherSanitizedName = string.gsub(msg.name, "[^%w]", "")
-        local otherFrameName = "AutoSpamEditFrame_" .. otherSanitizedName
-        if otherFrameName ~= frameName then
-            local otherFrame = getglobal(otherFrameName)
-            if otherFrame and otherFrame:IsVisible() then
-                otherFrame:Hide()
-            end
-        end
-    end
     
     -- Check if frame already exists
     local existingFrame = getglobal(frameName)
@@ -668,6 +668,10 @@ function AutoSpam:OpenEditWindow(messageName)
     
     -- Create new edit window
     local frame = CreateFrame("Frame", frameName, UIParent)
+    
+    -- Add to tracked frames list
+    table.insert(self.EditFrames, frame)
+    
     frame:SetWidth(355)
     frame:SetHeight(450)
     
