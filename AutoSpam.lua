@@ -10,13 +10,28 @@ function AutoSpam:Initialize()
         AutoSpamDB = {
             minimapPos = 180,
             interval = 300, -- 5 minutes default
-            messages = {},
-            activeMessages = {},
-            channel = "SAY",
-            customChannel = "",
+            messages = {},  -- Each message now stores: {name, text, enabled, channel, customChannel}
             enabled = false,
             debugMode = false
         }
+    end
+    
+    -- Migrate old messages to new format (add channel fields if missing)
+    if AutoSpamDB.messages then
+        for _, msg in ipairs(AutoSpamDB.messages) do
+            if not msg.enabled then
+                msg.enabled = false
+            end
+            if not msg.channel then
+                msg.channel = "SAY"
+            end
+            if not msg.customChannel then
+                msg.customChannel = ""
+            end
+            if not msg.weight then
+                msg.weight = 1  -- Default weight for existing messages
+            end
+        end
     end
     
     self.db = AutoSpamDB
@@ -24,6 +39,7 @@ function AutoSpam:Initialize()
     self.db.enabled = false
     self.currentMessageIndex = 1
     self.timeSincePost = 0
+    self.timerStarted = false  -- Timer only runs after first Start Posting click
 end
 
 -- Minimap button functions
@@ -36,12 +52,20 @@ function AutoSpam:CreateMinimapButton()
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:EnableMouse(true)
     
-    -- Icon texture (using chat bubble icon)
-    local icon = button:CreateTexture("AutoSpamMinimapIcon", "BACKGROUND")
-    icon:SetWidth(20)
-    icon:SetHeight(20)
-    icon:SetPoint("CENTER", 0, 1)
-    icon:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-Chat-Up")
+    -- Dark background behind text
+    local background = button:CreateTexture(nil, "BACKGROUND")
+    background:SetWidth(26)
+    background:SetHeight(26)
+    background:SetPoint("CENTER", 0, 1)
+    background:SetTexture("Interface\\Buttons\\WHITE8X8")
+    background:SetVertexColor(0.1, 0.1, 0.1, 1)
+    
+    -- "AS" text instead of icon
+    local text = button:CreateFontString(nil, "ARTWORK")
+    text:SetPoint("CENTER", 0, 1)
+    text:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    text:SetText("AS")
+    text:SetTextColor(1, 0.82, 0)  -- Gold color
     
     -- Border
     local overlay = button:CreateTexture(nil, "OVERLAY")
@@ -111,14 +135,16 @@ function AutoSpam:UpdateMinimapButtonPosition()
 end
 
 -- Settings Frame
+
+-- Settings Frame - NEW DESIGN
 function AutoSpam:CreateSettingsFrame()
     local frame = CreateFrame("Frame", "AutoSpamSettingsFrame", UIParent)
     
     -- Store reference immediately
     self.SettingsFrame = frame
     
-    frame:SetWidth(480)
-    frame:SetHeight(380)
+    frame:SetWidth(355)
+    frame:SetHeight(450)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetFrameStrata("HIGH")
     frame:SetBackdrop({
@@ -127,6 +153,7 @@ function AutoSpam:CreateSettingsFrame()
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
+    frame:SetBackdropColor(0, 0, 0, 0.9)  -- Darker background (twice as dark)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
@@ -142,46 +169,192 @@ function AutoSpam:CreateSettingsFrame()
     title:SetPoint("TOP", frame, "TOP", 0, -20)
     title:SetText("AutoSpam")
     
-    -- Create scroll frame
-    local scrollFrame = CreateFrame("ScrollFrame", "AutoSpamScrollFrame", frame)
-    scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -45)
-    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -40, 50)
+    -- Subtitle "By Fayz"
+    local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
+    subtitle:SetText("By Fayz")
+    subtitle:SetTextColor(1, 1, 1)  -- White color
+    
+    -- Close Button
+    local closeButton = CreateFrame("Button", "AutoSpamCloseButton", frame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", -5, -5)
+    closeButton:SetScript("OnClick", function()
+        frame:Hide()
+    end)
+    
+    -- Help Button (same gold color as other buttons)
+    local helpButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    helpButton:SetWidth(60)
+    helpButton:SetHeight(20)
+    helpButton:SetPoint("RIGHT", closeButton, "LEFT", -5, 0)
+    helpButton:SetText("Help")
+    helpButton:SetScript("OnClick", function()
+        AutoSpam:OpenHelpWindow()
+    end)
+    
+    local yOffset = -60  -- Adjusted for subtitle
+    
+    -- Start/Stop Button
+    local toggleButton = CreateFrame("Button", "AutoSpamToggleButton", frame, "UIPanelButtonTemplate")
+    toggleButton:SetWidth(100)
+    toggleButton:SetHeight(25)
+    toggleButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    toggleButton:SetText(self.db.enabled and "Stop Posting" or "Start Posting")
+    toggleButton:SetScript("OnClick", function()
+        AutoSpam:TogglePosting()
+    end)
+    self.ToggleButton = toggleButton
+    
+    -- Post Now Button
+    local postNowButton = CreateFrame("Button", "AutoSpamPostNowButton", frame, "UIPanelButtonTemplate")
+    postNowButton:SetWidth(80)
+    postNowButton:SetHeight(25)
+    postNowButton:SetPoint("LEFT", toggleButton, "RIGHT", 5, 0)
+    postNowButton:SetText("Post Now")
+    postNowButton:SetScript("OnClick", function()
+        AutoSpam:PostNow()
+    end)
+    
+    -- Countdown Timer (next to Post Now button)
+    local countdownText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    countdownText:SetPoint("LEFT", postNowButton, "RIGHT", 10, 0)
+    countdownText:SetText("Next post in: --:--")
+    countdownText:SetTextColor(1, 1, 1)  -- White color
+    self.CountdownText = countdownText
+    
+    yOffset = yOffset - 35
+    
+    -- Interval Slider
+    local intervalLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    intervalLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    intervalLabel:SetText("Post Interval:")
+    intervalLabel:SetTextColor(1, 0.82, 0)  -- Gold color
+    
+    -- Interval Display (next to Post Interval label in gold - only updates when slider moves)
+    local intervalText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    intervalText:SetPoint("LEFT", intervalLabel, "RIGHT", 5, 0)
+    local minutes = math.floor(self.db.interval / 60)
+    local seconds = self.db.interval - (minutes * 60)
+    intervalText:SetText(string.format("%d:%02d", minutes, seconds))
+    intervalText:SetTextColor(1, 0.82, 0)  -- Gold color
+    self.IntervalText = intervalText
+    
+    local intervalSlider = CreateFrame("Slider", "AutoSpamIntervalSlider", frame, "OptionsSliderTemplate")
+    intervalSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset - 20)
+    intervalSlider:SetWidth(315)
+    intervalSlider:SetHeight(15)
+    intervalSlider:SetOrientation("HORIZONTAL")
+    intervalSlider:SetMinMaxValues(60, 600)
+    intervalSlider:SetValueStep(30)
+    intervalSlider:SetValue(self.db.interval)
+    
+    getglobal(intervalSlider:GetName() .. "Low"):SetText("1 min")
+    getglobal(intervalSlider:GetName() .. "High"):SetText("10 min")
+    
+    intervalSlider:SetScript("OnValueChanged", function()
+        local value = this:GetValue()
+        AutoSpamDB.interval = value
+        
+        -- Update interval display only (not the countdown timer)
+        if AutoSpam.IntervalText then
+            local minutes = math.floor(value / 60)
+            local seconds = value - (minutes * 60)
+            AutoSpam.IntervalText:SetText(string.format("%d:%02d", minutes, seconds))
+        end
+    end)
+    
+    yOffset = yOffset - 65
+    
+    -- Add New Message Section
+    local addLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    addLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    addLabel:SetText("Add New Message")
+    addLabel:SetTextColor(1, 0.82, 0)  -- Gold color
+    
+    yOffset = yOffset - 25
+    
+    local nameLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    nameLabel:SetText("Message Name:")
+    nameLabel:SetTextColor(1, 0.82, 0)  -- Gold color
+    
+    local nameBox = CreateFrame("EditBox", "AutoSpamNewNameBox", frame, "InputBoxTemplate")
+    nameBox:SetWidth(150)
+    nameBox:SetHeight(20)
+    nameBox:SetPoint("TOPLEFT", frame, "TOPLEFT", 120, yOffset)
+    nameBox:SetAutoFocus(false)
+    nameBox:SetMaxLetters(50)
+    
+    local addButton = CreateFrame("Button", "AutoSpamAddButton", frame, "UIPanelButtonTemplate")
+    addButton:SetWidth(60)
+    addButton:SetHeight(25)
+    addButton:SetPoint("LEFT", nameBox, "RIGHT", 5, 0)
+    addButton:SetText("Add")
+    addButton:SetScript("OnClick", function()
+        local name = nameBox:GetText()
+        if name and name ~= "" then
+            AutoSpam:AddNewMessage(name)
+            nameBox:SetText("")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Please enter a message name.", 1, 0, 0)
+        end
+    end)
+    
+    yOffset = yOffset - 40
+    
+    -- Message List Section
+    local listLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    listLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    listLabel:SetText("Messages")
+    listLabel:SetTextColor(1, 0.82, 0)  -- Gold color
+    
+    yOffset = yOffset - 25
+    
+    -- Create scrollable message list
+    local listBorder = CreateFrame("Frame", "AutoSpamListBorder", frame)
+    listBorder:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    listBorder:SetWidth(315)
+    listBorder:SetHeight(180)
+    listBorder:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    listBorder:SetBackdropColor(0, 0, 0, 0.5)
+    listBorder:SetBackdropBorderColor(0.4, 0.4, 0.4)
+    
+    -- Scrollframe
+    local scrollFrame = CreateFrame("ScrollFrame", "AutoSpamMessageScrollFrame", listBorder)
+    scrollFrame:SetPoint("TOPLEFT", listBorder, "TOPLEFT", 4, -4)
+    scrollFrame:SetPoint("BOTTOMRIGHT", listBorder, "BOTTOMRIGHT", -20, 4)
     scrollFrame:EnableMouse(false)
     
-    -- Create scrollbar
-    local scrollBar = CreateFrame("Slider", "AutoSpamScrollBar", scrollFrame)
-    scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -55)
-    scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 60)
-    scrollBar:SetWidth(16)
+    -- Scrollbar
+    local scrollBar = CreateFrame("Slider", "AutoSpamMessageScrollBar", listBorder)
+    scrollBar:SetPoint("TOPRIGHT", listBorder, "TOPRIGHT", -4, -4)
+    scrollBar:SetPoint("BOTTOMRIGHT", listBorder, "BOTTOMRIGHT", -4, 4)
+    scrollBar:SetWidth(12)
     scrollBar:SetOrientation("VERTICAL")
     scrollBar:SetMinMaxValues(0, 1)
     scrollBar:SetValue(0)
-    scrollBar:SetValueStep(1)
-    
-    -- Scrollbar textures
-    scrollBar:SetBackdrop({
-        bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
-        edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = { left = 3, right = 3, top = 6, bottom = 6 }
-    })
     
     local scrollThumb = scrollBar:CreateTexture(nil, "OVERLAY")
     scrollThumb:SetTexture("Interface\\Buttons\\UI-SliderBar-Button-Vertical")
-    scrollThumb:SetWidth(16)
-    scrollThumb:SetHeight(24)
+    scrollThumb:SetWidth(12)
+    scrollThumb:SetHeight(20)
     scrollBar:SetThumbTexture(scrollThumb)
     
     scrollBar:SetScript("OnValueChanged", function()
         scrollFrame:SetVerticalScroll(this:GetValue())
     end)
     
-    -- Content frame
-    local content = CreateFrame("Frame", "AutoSpamContent", scrollFrame)
-    content:SetWidth(400)
-    content:SetHeight(590)
-    content:EnableMouse(false)
-    scrollFrame:SetScrollChild(content)
+    -- Content frame for messages
+    local messageList = CreateFrame("Frame", "AutoSpamMessageList", scrollFrame)
+    messageList:SetWidth(285)
+    messageList:SetHeight(400)
+    messageList:EnableMouse(false)
+    scrollFrame:SetScrollChild(messageList)
     
     -- Enable mouse wheel scrolling
     scrollFrame:EnableMouseWheel(true)
@@ -195,384 +368,527 @@ function AutoSpam:CreateSettingsFrame()
         end
     end)
     
-    -- Update scrollbar range when content changes
-    local function UpdateScrollRange()
-        local contentHeight = 590
-        local frameHeight = scrollFrame:GetHeight()
-        local maxScroll = math.max(0, contentHeight - frameHeight)
-        scrollBar:SetMinMaxValues(0, maxScroll)
-        if maxScroll == 0 then
-            scrollBar:Hide()
-        else
-            scrollBar:Show()
+    -- Store references
+    self.MessageList = messageList
+    self.MessageScrollBar = scrollBar
+    
+    -- Initial message list update
+    self:UpdateMessageList()
+end
+
+-- Helper Functions for New UI
+
+function AutoSpam:AddNewMessage(name)
+    -- Check if name already exists
+    for _, msg in ipairs(self.db.messages) do
+        if msg.name == name then
+            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: A message with that name already exists.", 1, 0, 0)
+            return
         end
     end
     
-    scrollFrame:SetScript("OnShow", UpdateScrollRange)
-    UpdateScrollRange()
-    
-    local yOffset = -10
-    
-    -- Debug Mode Checkbox
-    local debugCheck = CreateFrame("CheckButton", "AutoSpamDebugCheck", content)
-    debugCheck:SetWidth(20)
-    debugCheck:SetHeight(20)
-    debugCheck:SetPoint("TOPLEFT", content, "TOPLEFT", 10, yOffset)
-    debugCheck:EnableMouse(true)
-    debugCheck:RegisterForClicks("LeftButtonUp")
-    debugCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
-    debugCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
-    debugCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
-    debugCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
-    debugCheck:SetDisabledCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check-Disabled")
-    
-    -- Make checkmark yellow
-    local checkedTexture = debugCheck:GetCheckedTexture()
-    checkedTexture:SetVertexColor(1, 1, 0)
-    
-    debugCheck:SetChecked(self.db.debugMode)
-    
-    local debugLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    debugLabel:SetPoint("LEFT", debugCheck, "RIGHT", 5, 0)
-    debugLabel:SetText("Debug Mode")
-    
-    -- Start/Stop Button (next to debug checkbox)
-    local toggleButton = CreateFrame("Button", "AutoSpamToggleButton", content, "UIPanelButtonTemplate")
-    toggleButton:SetWidth(100)
-    toggleButton:SetHeight(25)
-    toggleButton:SetPoint("LEFT", debugLabel, "RIGHT", 15, 0)
-    toggleButton:SetText(self.db.enabled and "Stop Posting" or "Start Posting")
-    toggleButton:SetScript("OnClick", function()
-        AutoSpam:TogglePosting()
-    end)
-    
-    -- Countdown Timer (next to button)
-    local timerText = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    timerText:SetPoint("LEFT", toggleButton, "RIGHT", 10, 0)
-    timerText:SetText("Interval: --:--")
-    
-    debugCheck:SetScript("OnClick", function()
-        AutoSpamDB.debugMode = this:GetChecked() and true or false
-        if AutoSpamDB.debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Debug mode enabled", 0, 1, 0)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Debug mode disabled", 1, 1, 0)
-        end
-    end)
-    
-    yOffset = yOffset - 30
-    
-    -- Section 1: Interval Settings
-    local intervalLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    intervalLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 15, yOffset)
-    intervalLabel:SetText("Post Interval")
-    yOffset = yOffset - 22
-    
-    local intervalSlider = CreateFrame("Slider", "AutoSpamIntervalSlider", content)
-    intervalSlider:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    intervalSlider:SetWidth(350)
-    intervalSlider:SetHeight(20)
-    intervalSlider:SetOrientation("HORIZONTAL")
-    intervalSlider:SetMinMaxValues(60, 600)
-    intervalSlider:SetValueStep(30)
-    intervalSlider:SetValue(self.db.interval)
-    
-    intervalSlider:SetBackdrop({
-        bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
-        edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = { left = 3, right = 3, top = 6, bottom = 6 }
+    -- Add new message with default values
+    table.insert(self.db.messages, {
+        name = name,
+        text = "",
+        enabled = false,
+        channel = "SAY",
+        customChannel = "",
+        weight = 1  -- Default weight
     })
     
-    local sliderThumb = intervalSlider:CreateTexture(nil, "OVERLAY")
-    sliderThumb:SetTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-    sliderThumb:SetWidth(32)
-    sliderThumb:SetHeight(32)
-    intervalSlider:SetThumbTexture(sliderThumb)
+    DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Added message '" .. name .. "'. Click Edit to set the message text.", 0, 1, 0)
+    self:UpdateMessageList()
+end
+
+function AutoSpam:UpdateMessageList()
+    -- Clear existing message rows
+    if self.MessageRows then
+        for _, row in ipairs(self.MessageRows) do
+            row:Hide()
+            row:SetParent(nil)
+        end
+    end
+    self.MessageRows = {}
     
-    local intervalText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    intervalText:SetPoint("TOP", intervalSlider, "BOTTOM", 0, -5)
-    intervalText:SetText(AutoSpam:FormatTime(self.db.interval))
+    local yPos = -5
+    local numMessages = table.getn(self.db.messages)
     
-    intervalSlider:SetScript("OnValueChanged", function()
-        local value = this:GetValue()
-        AutoSpamDB.interval = value
-        intervalText:SetText(AutoSpam:FormatTime(value))
+    for i, msg in ipairs(self.db.messages) do
+        -- Create row frame with background
+        local row = CreateFrame("Frame", nil, self.MessageList)
+        row:SetWidth(275)
+        row:SetHeight(28)
+        row:SetPoint("TOPLEFT", self.MessageList, "TOPLEFT", 5, yPos)
         
-        -- Update timer text
-        if AutoSpam.TimerText then
-            if AutoSpam.db and AutoSpam.db.enabled then
-                local remaining = AutoSpam.db.interval - AutoSpam.timeSincePost
-                local minutes = math.floor(remaining / 60)
-                local seconds = remaining - (minutes * 60)
-                AutoSpam.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
-            else
-                local minutes = math.floor(value / 60)
-                local seconds = value - (minutes * 60)
-                AutoSpam.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
+        -- Row background
+        row:SetBackdrop({
+            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 8,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 }
+        })
+        row:SetBackdropColor(0, 0, 0, 0.6)
+        row:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+        
+        -- Enabled checkbox
+        local checkbox = CreateFrame("CheckButton", nil, row)
+        checkbox:SetWidth(20)
+        checkbox:SetHeight(20)
+        checkbox:SetPoint("LEFT", row, "LEFT", 5, 0)
+        checkbox:EnableMouse(true)
+        checkbox:RegisterForClicks("LeftButtonUp")
+        checkbox:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+        checkbox:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+        checkbox:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
+        checkbox:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+        
+        local checkedTexture = checkbox:GetCheckedTexture()
+        checkedTexture:SetVertexColor(1, 1, 0)
+        
+        checkbox:SetChecked(msg.enabled)
+        
+        local messageName = msg.name
+        checkbox:SetScript("OnClick", function()
+            AutoSpam:ToggleMessageEnabled(messageName)
+        end)
+        
+        -- Message name text (gold color like DoiteAuras)
+        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        nameText:SetPoint("LEFT", checkbox, "RIGHT", 5, 0)
+        local weight = msg.weight or 1  -- Default to 1 if not set
+        if weight > 1 then
+            nameText:SetText(msg.name .. " (x" .. weight .. ")")
+        else
+            nameText:SetText(msg.name)
+        end
+        nameText:SetTextColor(1, 0.82, 0)  -- Gold color
+        nameText:SetWidth(90)
+        nameText:SetJustifyH("LEFT")
+        
+        -- Up arrow button (smaller)
+        local upButton = CreateFrame("Button", nil, row)
+        upButton:SetWidth(8)
+        upButton:SetHeight(8)
+        upButton:SetPoint("LEFT", nameText, "RIGHT", 21, 0)
+        upButton:EnableMouse(true)
+        upButton:RegisterForClicks("LeftButtonUp")
+        upButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up")
+        upButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Down")
+        upButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up")
+        
+        local messageIndex = i
+        upButton:SetScript("OnClick", function()
+            AutoSpam:MoveMessageUp(messageIndex)
+        end)
+        if i == 1 then
+            upButton:Disable()
+        end
+        
+        -- Down arrow button (smaller)
+        local downButton = CreateFrame("Button", nil, row)
+        downButton:SetWidth(8)
+        downButton:SetHeight(8)
+        downButton:SetPoint("LEFT", upButton, "RIGHT", 1, 0)
+        downButton:EnableMouse(true)
+        downButton:RegisterForClicks("LeftButtonUp")
+        downButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
+        downButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down")
+        downButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
+        downButton:SetScript("OnClick", function()
+            AutoSpam:MoveMessageDown(messageIndex)
+        end)
+        if i == numMessages then
+            downButton:Disable()
+        end
+        
+        -- Edit button
+        local editButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        editButton:SetWidth(45)
+        editButton:SetHeight(20)
+        editButton:SetPoint("LEFT", downButton, "RIGHT", 2, 0)
+        editButton:SetText("Edit")
+        editButton:SetScript("OnClick", function()
+            AutoSpam:OpenEditWindow(messageName)
+        end)
+        
+        -- Remove button
+        local removeButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        removeButton:SetWidth(60)
+        removeButton:SetHeight(20)
+        removeButton:SetPoint("LEFT", editButton, "RIGHT", 2, 0)
+        removeButton:SetText("Remove")
+        removeButton:SetScript("OnClick", function()
+            AutoSpam:RemoveMessage(messageName)
+        end)
+        
+        table.insert(self.MessageRows, row)
+        yPos = yPos - 30  -- 28px row + 2px gap
+    end
+    
+    -- Update scrollbar range
+    local contentHeight = math.max(180, numMessages * 30 + 10)
+    self.MessageList:SetHeight(contentHeight)
+    
+    local scrollFrameHeight = 172
+    local maxScroll = math.max(0, contentHeight - scrollFrameHeight)
+    self.MessageScrollBar:SetMinMaxValues(0, maxScroll)
+    
+    if maxScroll == 0 then
+        self.MessageScrollBar:Hide()
+    else
+        self.MessageScrollBar:Show()
+    end
+end
+
+function AutoSpam:ToggleMessageEnabled(messageName)
+    for _, msg in ipairs(self.db.messages) do
+        if msg.name == messageName then
+            msg.enabled = not msg.enabled
+            if AutoSpamDB.debugMode then
+                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: " .. messageName .. " " .. (msg.enabled and "enabled" or "disabled"), 1, 1, 0)
+            end
+            break
+        end
+    end
+    self:UpdateMessageList()
+end
+
+function AutoSpam:MoveMessageUp(index)
+    if index > 1 then
+        local temp = self.db.messages[index]
+        self.db.messages[index] = self.db.messages[index - 1]
+        self.db.messages[index - 1] = temp
+        self:UpdateMessageList()
+    end
+end
+
+function AutoSpam:MoveMessageDown(index)
+    if index < table.getn(self.db.messages) then
+        local temp = self.db.messages[index]
+        self.db.messages[index] = self.db.messages[index + 1]
+        self.db.messages[index + 1] = temp
+        self:UpdateMessageList()
+    end
+end
+
+function AutoSpam:RemoveMessage(messageName)
+    for i, msg in ipairs(self.db.messages) do
+        if msg.name == messageName then
+            table.remove(self.db.messages, i)
+            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Removed message '" .. messageName .. "'", 1, 1, 0)
+            self:UpdateMessageList()
+            return
+        end
+    end
+end
+
+function AutoSpam:OpenEditWindow(messageName)
+    -- Sanitize message name for frame name (remove spaces and special chars)
+    local sanitizedName = string.gsub(messageName, "[^%w]", "")
+    local frameName = "AutoSpamEditFrame_" .. sanitizedName
+    
+    -- Close all other edit windows first
+    for _, msg in ipairs(self.db.messages) do
+        local otherSanitizedName = string.gsub(msg.name, "[^%w]", "")
+        local otherFrameName = "AutoSpamEditFrame_" .. otherSanitizedName
+        if otherFrameName ~= frameName then
+            local otherFrame = getglobal(otherFrameName)
+            if otherFrame and otherFrame:IsVisible() then
+                otherFrame:Hide()
             end
         end
-    end)
+    end
     
-    yOffset = yOffset - 45
-    
-    -- Section 2: Message Management
-    local messageLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    messageLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 15, yOffset)
-    messageLabel:SetText("Message Management")
-    yOffset = yOffset - 20
-    
-    -- Message Name
-    local nameLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    nameLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    nameLabel:SetText("Message Name:")
-    yOffset = yOffset - 18
-    
-    local nameBox = CreateFrame("EditBox", "AutoSpamNameBox", content)
-    nameBox:SetWidth(350)
-    nameBox:SetHeight(25)
-    nameBox:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    nameBox:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    nameBox:SetBackdropColor(0, 0, 0, 0.5)
-    nameBox:SetBackdropBorderColor(0.4, 0.4, 0.4)
-    nameBox:SetFontObject(GameFontNormal)
-    nameBox:SetTextInsets(8, 8, 0, 0)
-    nameBox:SetAutoFocus(false)
-    nameBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
-    nameBox:SetScript("OnEnterPressed", function() this:ClearFocus() end)
-    
-    yOffset = yOffset - 32
-    
-    -- Message Text
-    local textLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    textLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    textLabel:SetText("Message Text:")
-    yOffset = yOffset - 18
-    
-    local textBox = CreateFrame("EditBox", "AutoSpamTextBox", content)
-    textBox:SetWidth(350)
-    textBox:SetHeight(60)
-    textBox:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    textBox:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    textBox:SetBackdropColor(0, 0, 0, 0.5)
-    textBox:SetBackdropBorderColor(0.4, 0.4, 0.4)
-    textBox:SetFontObject(GameFontNormal)
-    textBox:SetTextInsets(8, 8, 8, 8)
-    textBox:SetMultiLine(true)
-    textBox:SetAutoFocus(false)
-    textBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
-    
-    yOffset = yOffset - 68
-    
-    -- Save and Navigation Buttons
-    local saveButton = CreateFrame("Button", "AutoSpamSaveButton", content, "UIPanelButtonTemplate")
-    saveButton:SetWidth(85)
-    saveButton:SetHeight(25)
-    saveButton:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    saveButton:SetText("Save")
-    saveButton:SetScript("OnClick", function()
-        AutoSpam:SaveMessage(nameBox:GetText(), textBox:GetText())
-    end)
-    
-    local prevButton = CreateFrame("Button", "AutoSpamPrevButton", content, "UIPanelButtonTemplate")
-    prevButton:SetWidth(65)
-    prevButton:SetHeight(25)
-    prevButton:SetPoint("LEFT", saveButton, "RIGHT", 5, 0)
-    prevButton:SetText("< Prev")
-    prevButton:SetScript("OnClick", function()
-        AutoSpam:NavigateMessage(-1)
-    end)
-    
-    local nextButton = CreateFrame("Button", "AutoSpamNextButton", content, "UIPanelButtonTemplate")
-    nextButton:SetWidth(65)
-    nextButton:SetHeight(25)
-    nextButton:SetPoint("LEFT", prevButton, "RIGHT", 5, 0)
-    nextButton:SetText("Next >")
-    nextButton:SetScript("OnClick", function()
-        AutoSpam:NavigateMessage(1)
-    end)
-    
-    local deleteButton = CreateFrame("Button", "AutoSpamDeleteButton", content, "UIPanelButtonTemplate")
-    deleteButton:SetWidth(65)
-    deleteButton:SetHeight(25)
-    deleteButton:SetPoint("LEFT", nextButton, "RIGHT", 5, 0)
-    deleteButton:SetText("Delete")
-    deleteButton:SetScript("OnClick", function()
-        AutoSpam:DeleteCurrentMessage()
-    end)
-    
-    yOffset = yOffset - 30
-    
-    local currentMsgLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    currentMsgLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    currentMsgLabel:SetText("No messages saved")
-    
-    yOffset = yOffset - 22
-    
-    -- Section 3: Active Messages Selection
-    local activeLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    activeLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 15, yOffset)
-    activeLabel:SetText("Active Messages")
-    yOffset = yOffset - 18
-    
-    local activeInfo = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    activeInfo:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    activeInfo:SetText("Click to toggle active/inactive:")
-    yOffset = yOffset - 18
-    
-    -- Create fixed border frame for active messages
-    local activeBorder = CreateFrame("Frame", "AutoSpamActiveBorder", content)
-    activeBorder:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    activeBorder:SetWidth(310)
-    activeBorder:SetHeight(100)
-    activeBorder:SetFrameLevel(content:GetFrameLevel() + 10)
-    activeBorder:EnableMouse(false)
-    activeBorder:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    activeBorder:SetBackdropColor(0, 0, 0, 0.5)
-    activeBorder:SetBackdropBorderColor(0.4, 0.4, 0.4)
-    
-    -- Create scrollable list inside the border for active messages
-    local activeScrollFrame = CreateFrame("ScrollFrame", "AutoSpamActiveScrollFrame", activeBorder)
-    activeScrollFrame:SetPoint("TOPLEFT", activeBorder, "TOPLEFT", 4, -4)
-    activeScrollFrame:SetPoint("BOTTOMRIGHT", activeBorder, "BOTTOMRIGHT", -20, 4)
-    activeScrollFrame:EnableMouse(false)
-    
-    -- Scrollbar for active messages
-    local activeScrollBar = CreateFrame("Slider", "AutoSpamActiveScrollBar", activeBorder)
-    activeScrollBar:SetPoint("TOPRIGHT", activeBorder, "TOPRIGHT", -4, -4)
-    activeScrollBar:SetPoint("BOTTOMRIGHT", activeBorder, "BOTTOMRIGHT", -4, 4)
-    activeScrollBar:SetWidth(12)
-    activeScrollBar:SetOrientation("VERTICAL")
-    activeScrollBar:SetMinMaxValues(0, 1)
-    activeScrollBar:SetValue(0)
-    
-    local activeScrollThumb = activeScrollBar:CreateTexture(nil, "OVERLAY")
-    activeScrollThumb:SetTexture("Interface\\Buttons\\UI-SliderBar-Button-Vertical")
-    activeScrollThumb:SetWidth(12)
-    activeScrollThumb:SetHeight(20)
-    activeScrollBar:SetThumbTexture(activeScrollThumb)
-    
-    activeScrollBar:SetScript("OnValueChanged", function()
-        activeScrollFrame:SetVerticalScroll(this:GetValue())
-    end)
-    
-    -- Content frame for active messages (no backdrop, just holds checkboxes)
-    local activeList = CreateFrame("Frame", "AutoSpamActiveList", activeScrollFrame)
-    activeList:SetWidth(270)
-    activeList:SetHeight(400)
-    activeList:SetFrameStrata("DIALOG")
-    activeList:EnableMouse(false)
-    activeScrollFrame:SetScrollChild(activeList)
-    
-    -- Enable mouse wheel scrolling for active messages
-    activeScrollFrame:EnableMouseWheel(true)
-    activeScrollFrame:SetScript("OnMouseWheel", function()
-        local current = activeScrollBar:GetValue()
-        local minVal, maxVal = activeScrollBar:GetMinMaxValues()
-        if arg1 > 0 then
-            activeScrollBar:SetValue(math.max(minVal, current - 20))
+    -- Check if frame already exists
+    local existingFrame = getglobal(frameName)
+    if existingFrame then
+        if existingFrame:IsVisible() then
+            existingFrame:Hide()
         else
-            activeScrollBar:SetValue(math.min(maxVal, current + 20))
+            existingFrame:Show()
+            
+            -- Update dropdown text when showing existing window
+            local dropdownName = "AutoSpamEditChannelDD_" .. sanitizedName
+            local dropdown = getglobal(dropdownName)
+            if dropdown then
+                -- Find the message to get current channel
+                local message = nil
+                for _, msg in ipairs(self.db.messages) do
+                    if msg.name == messageName then
+                        message = msg
+                        break
+                    end
+                end
+                
+                if message then
+                    local channels = {
+                        {text = "Say", value = "SAY"},
+                        {text = "Yell", value = "YELL"},
+                        {text = "Guild", value = "GUILD"},
+                        {text = "Officer", value = "OFFICER"},
+                        {text = "Party", value = "PARTY"},
+                        {text = "Raid", value = "RAID"},
+                        {text = "World", value = "WORLD"},
+                        {text = "Custom Channel", value = "CHANNEL"}
+                    }
+                    
+                    local displayText = "Say"
+                    for _, channel in ipairs(channels) do
+                        if channel.value == message.channel then
+                            displayText = channel.text
+                            break
+                        end
+                    end
+                    
+                    -- Set the dropdown text
+                    local btn = getglobal(dropdownName .. "Text")
+                    if btn then
+                        btn:SetText(displayText)
+                    end
+                end
+            end
+        end
+        return
+    end
+    
+    -- Find the message
+    local message = nil
+    for _, msg in ipairs(self.db.messages) do
+        if msg.name == messageName then
+            message = msg
+            break
+        end
+    end
+    
+    if not message then
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message not found.", 1, 0, 0)
+        return
+    end
+    
+    -- Create new edit window
+    local frame = CreateFrame("Frame", frameName, UIParent)
+    frame:SetWidth(355)
+    frame:SetHeight(450)
+    
+    -- Position to the right of the main settings window
+    if self.SettingsFrame and self.SettingsFrame:IsVisible() then
+        frame:SetPoint("TOPLEFT", self.SettingsFrame, "TOPRIGHT", 5, 0)
+    else
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
+    
+    frame:SetFrameStrata("HIGH")
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.9)  -- Darker background (twice as dark)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() this:StartMoving() end)
+    frame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    
+    -- Register for escape key
+    table.insert(UISpecialFrames, frameName)
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", frame, "TOP", -25, -20)
+    title:SetText("Edit: " .. messageName)
+    
+    -- Name EditBox (for renaming, initially hidden)
+    local nameEditBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+    nameEditBox:SetWidth(180)
+    nameEditBox:SetHeight(20)
+    nameEditBox:SetPoint("TOP", frame, "TOP", -25, -20)
+    nameEditBox:SetAutoFocus(false)
+    nameEditBox:SetMaxLetters(50)
+    nameEditBox:SetFontObject(GameFontNormalLarge)
+    nameEditBox:Hide()
+    
+    -- Rename Button
+    local renameButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    renameButton:SetWidth(50)
+    renameButton:SetHeight(18)
+    renameButton:SetPoint("LEFT", title, "RIGHT", 5, 0)
+    renameButton:SetText("Rename")
+    
+    local isRenaming = false
+    
+    renameButton:SetScript("OnClick", function()
+        if not isRenaming then
+            -- Enter rename mode
+            isRenaming = true
+            title:Hide()
+            nameEditBox:SetText(messageName)
+            nameEditBox:Show()
+            nameEditBox:SetFocus()
+            renameButton:SetText("Save")
+        else
+            -- Save rename
+            local newName = nameEditBox:GetText()
+            
+            -- Validate new name
+            if newName == "" then
+                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message name cannot be empty.", 1, 0, 0)
+                return
+            end
+            
+            -- Check for duplicate names
+            local isDuplicate = false
+            for _, msg in ipairs(AutoSpam.db.messages) do
+                if msg.name == newName and msg.name ~= messageName then
+                    isDuplicate = true
+                    break
+                end
+            end
+            
+            if isDuplicate then
+                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: A message with that name already exists.", 1, 0, 0)
+                return
+            end
+            
+            -- Update the message name
+            message.name = newName
+            messageName = newName
+            
+            -- Update UI
+            title:SetText("Edit: " .. newName)
+            nameEditBox:Hide()
+            title:Show()
+            renameButton:SetText("Rename")
+            isRenaming = false
+            
+            -- Update message list
+            AutoSpam:UpdateMessageList()
+            
+            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message renamed to '" .. newName .. "'.", 0, 1, 0)
         end
     end)
     
-    yOffset = yOffset - 108
-    
-    -- Section 4: Channel Selection
-    local channelLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    channelLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 15, yOffset)
-    channelLabel:SetText("Channel Settings")
-    yOffset = yOffset - 22
-    
-    local channelDropdown = CreateFrame("Frame", "AutoSpamChannelDropdown", content, "UIDropDownMenuTemplate")
-    channelDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", 5, yOffset)
-    
-    yOffset = yOffset - 35
-    
-    local customChannelLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    customChannelLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    customChannelLabel:SetText("Custom Channel Name:")
-    yOffset = yOffset - 18
-    
-    local customChannelBox = CreateFrame("EditBox", "AutoSpamCustomChannelBox", content)
-    customChannelBox:SetWidth(350)
-    customChannelBox:SetHeight(25)
-    customChannelBox:SetPoint("TOPLEFT", content, "TOPLEFT", 25, yOffset)
-    customChannelBox:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    customChannelBox:SetBackdropColor(0, 0, 0, 0.5)
-    customChannelBox:SetBackdropBorderColor(0.4, 0.4, 0.4)
-    customChannelBox:SetFontObject(GameFontNormal)
-    customChannelBox:SetTextInsets(8, 8, 0, 0)
-    customChannelBox:SetAutoFocus(false)
-    customChannelBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
-    customChannelBox:SetScript("OnEnterPressed", function() 
-        AutoSpamDB.customChannel = this:GetText()
-        this:ClearFocus() 
+    -- Allow Enter key to save rename
+    nameEditBox:SetScript("OnEnterPressed", function()
+        renameButton:GetScript("OnClick")()
     end)
-    customChannelBox:SetScript("OnTextChanged", function()
-        AutoSpamDB.customChannel = this:GetText()
-    end)
-    customChannelBox:SetText(self.db.customChannel)
     
-    yOffset = yOffset - 38
+    -- Allow Escape key to cancel rename
+    nameEditBox:SetScript("OnEscapePressed", function()
+        nameEditBox:Hide()
+        title:Show()
+        renameButton:SetText("Rename")
+        isRenaming = false
+        this:ClearFocus()
+    end)
     
     -- Close Button
-    local closeButton = CreateFrame("Button", "AutoSpamCloseButton", frame, "UIPanelCloseButton")
+    local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
     closeButton:SetScript("OnClick", function()
         frame:Hide()
     end)
     
-    -- Store other references
-    self.SettingsContent = content
-    self.NameBox = nameBox
-    self.TextBox = textBox
-    self.CurrentMsgLabel = currentMsgLabel
-    self.ActiveBorder = activeBorder
-    self.ActiveList = activeList
-    self.ActiveScrollBar = activeScrollBar
-    self.ChannelDropdown = channelDropdown
-    self.CustomChannelBox = customChannelBox
-    self.ToggleButton = toggleButton
-    self.TimerText = timerText
+    local yOffset = -50
     
-    -- Initialize channel dropdown with error protection
-    local success, err = pcall(function()
-        UIDropDownMenu_Initialize(channelDropdown, function()
-            AutoSpam:InitializeChannelDropdown()
-        end)
-        UIDropDownMenu_SetWidth(150, channelDropdown)
-        UIDropDownMenu_SetSelectedValue(channelDropdown, self.db.channel)
-    end)
+    -- Message Text Label
+    local textLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    textLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    textLabel:SetText("Message Text:")
+    textLabel:SetTextColor(1, 0.82, 0)
     
-    if not success then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Dropdown init error: " .. tostring(err), 1, 0, 0)
+    yOffset = yOffset - 20
+    
+    -- Message Text Input (scrollable)
+    local textBorder = CreateFrame("Frame", nil, frame)
+    textBorder:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    textBorder:SetWidth(315)
+    textBorder:SetHeight(100)
+    textBorder:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    textBorder:SetBackdropColor(0, 0, 0, 0.5)
+    textBorder:SetBackdropBorderColor(0.4, 0.4, 0.4)
+    
+    local textScrollFrame = CreateFrame("ScrollFrame", nil, textBorder)
+    textScrollFrame:SetPoint("TOPLEFT", textBorder, "TOPLEFT", 4, -4)
+    textScrollFrame:SetPoint("BOTTOMRIGHT", textBorder, "BOTTOMRIGHT", -4, 4)
+    
+    local textBox = CreateFrame("EditBox", nil, textScrollFrame)
+    textBox:SetWidth(305)
+    textBox:SetHeight(90)
+    textBox:SetMultiLine(true)
+    textBox:SetAutoFocus(false)
+    textBox:SetFontObject(GameFontNormal)
+    textBox:SetTextInsets(5, 5, 5, 5)  -- Add padding inside the text box
+    textBox:SetText(message.text or "")
+    textBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    textScrollFrame:SetScrollChild(textBox)
+    
+    -- Character counter
+    local charCount = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    charCount:SetPoint("TOPRIGHT", textBorder, "BOTTOMRIGHT", 0, -3)
+    local currentLength = string.len(message.text or "")
+    charCount:SetText(currentLength .. " / 255")
+    if currentLength <= 255 then
+        charCount:SetTextColor(0, 1, 0)  -- Green
+    else
+        charCount:SetTextColor(1, 0, 0)  -- Red
     end
     
-    self:UpdateActiveMessageList()
-end
-
-function AutoSpam:InitializeChannelDropdown()
+    -- Update character counter on text change
+    textBox:SetScript("OnTextChanged", function()
+        local text = this:GetText()
+        message.text = text  -- Save to message
+        local length = string.len(text)
+        charCount:SetText(length .. " / 255")
+        if length <= 255 then
+            charCount:SetTextColor(0, 1, 0)  -- Green
+        else
+            charCount:SetTextColor(1, 0, 0)  -- Red
+        end
+    end)
+    
+    yOffset = yOffset - 120  -- Adjusted for character counter
+    
+    -- Channel Label
+    local channelLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    channelLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    channelLabel:SetText("Channel:")
+    channelLabel:SetTextColor(1, 0.82, 0)
+    
+    yOffset = yOffset - 20
+    
+    -- Channel Dropdown
+    local channelDropdown = CreateFrame("Frame", "AutoSpamEditChannelDD_" .. sanitizedName, frame, "UIDropDownMenuTemplate")
+    channelDropdown:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, yOffset)
+    
+    -- Custom Channel Input (positioned absolutely beside dropdown area)
+    local customChannelBox = CreateFrame("EditBox", "AutoSpamCustomChannel_" .. sanitizedName, frame, "InputBoxTemplate")
+    customChannelBox:SetWidth(140)
+    customChannelBox:SetHeight(20)
+    customChannelBox:SetPoint("TOPLEFT", frame, "TOPLEFT", 175, yOffset - 2)
+    customChannelBox:SetAutoFocus(false)
+    customChannelBox:SetMaxLetters(50)
+    customChannelBox:SetText(message.customChannel or "")
+    customChannelBox:EnableMouse(true)
+    customChannelBox:EnableKeyboard(true)
+    customChannelBox:SetScript("OnTextChanged", function()
+        message.customChannel = this:GetText()
+    end)
+    customChannelBox:SetScript("OnEscapePressed", function() 
+        this:ClearFocus() 
+    end)
+    customChannelBox:SetScript("OnEnterPressed", function() 
+        this:ClearFocus() 
+    end)
+    customChannelBox:Hide()  -- Hidden by default
+    
     local channels = {
         {text = "Say", value = "SAY"},
         {text = "Yell", value = "YELL"},
@@ -580,36 +896,456 @@ function AutoSpam:InitializeChannelDropdown()
         {text = "Officer", value = "OFFICER"},
         {text = "Party", value = "PARTY"},
         {text = "Raid", value = "RAID"},
+        {text = "World", value = "WORLD"},
         {text = "Custom Channel", value = "CHANNEL"}
     }
     
-    if AutoSpamDB.debugMode then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Initializing dropdown, current channel = " .. tostring(AutoSpamDB.channel), 1, 1, 0)
+    -- Capture the custom channel box in closure for dropdown callback
+    local customBox = customChannelBox
+    
+    local success, err = pcall(function()
+        UIDropDownMenu_Initialize(channelDropdown, function()
+            for _, channel in ipairs(channels) do
+                local info = {}
+                info.text = channel.text
+                info.value = channel.value
+                info.func = function()
+                    message.channel = info.value
+                    UIDropDownMenu_SetSelectedValue(channelDropdown, info.value)
+                    -- Set dropdown button text directly
+                    local btn = getglobal(channelDropdown:GetName() .. "Text")
+                    if btn then
+                        btn:SetText(info.text)
+                    end
+                    -- Show/hide custom channel input
+                    if info.value == "CHANNEL" then
+                        customBox:Show()
+                    else
+                        customBox:Hide()
+                    end
+                    -- Force close dropdown
+                    HideDropDownMenu(1)
+                end
+                info.checked = (message.channel == channel.value)
+                UIDropDownMenu_AddButton(info)
+            end
+        end)
+    end)
+    
+    -- Find initial display text
+    local initialText = "Say"
+    for _, channel in ipairs(channels) do
+        if channel.value == message.channel then
+            initialText = channel.text
+            break
+        end
     end
     
-    for _, channel in ipairs(channels) do
-        local info = {}
-        info.text = channel.text
-        info.value = channel.value
-        info.func = function(button)
-            if AutoSpamDB.debugMode then
-                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Clicked, this=" .. tostring(this) .. " arg1=" .. tostring(arg1), 1, 0.5, 0)
+    -- Set the selected value
+    UIDropDownMenu_SetSelectedValue(channelDropdown, message.channel)
+    
+    -- Get or create the text display element
+    local dropdownButton = getglobal(channelDropdown:GetName() .. "Button")
+    local textElement = getglobal(channelDropdown:GetName() .. "Text")
+    
+    if not textElement and dropdownButton then
+        -- Text element doesn't exist, create it manually
+        textElement = dropdownButton:CreateFontString(channelDropdown:GetName() .. "Text", "ARTWORK", "GameFontHighlightSmall")
+        textElement:SetPoint("LEFT", dropdownButton, "LEFT", 27, 2)
+        textElement:SetPoint("RIGHT", dropdownButton, "RIGHT", -43, 2)
+        textElement:SetJustifyH("LEFT")
+        textElement:SetText(initialText)
+    elseif textElement then
+        -- Text element exists, just set it
+        textElement:SetText(initialText)
+    end
+    
+    -- Show/hide custom channel box based on saved selection
+    if message.channel == "CHANNEL" then
+        customChannelBox:Show()
+    else
+        customChannelBox:Hide()
+    end
+    
+    yOffset = yOffset - 40
+    
+    -- Weight Label
+    local weightLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    weightLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    weightLabel:SetText("Weight:")
+    weightLabel:SetTextColor(1, 0.82, 0)
+    
+    -- Weight display (next to Weight label in gold)
+    local weightText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    weightText:SetPoint("LEFT", weightLabel, "RIGHT", 5, 0)
+    weightText:SetText("x" .. (message.weight or 1))
+    weightText:SetTextColor(1, 0.82, 0)
+    
+    yOffset = yOffset - 20
+    
+    -- Weight Slider
+    local weightSlider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
+    weightSlider:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
+    weightSlider:SetWidth(315)
+    weightSlider:SetMinMaxValues(1, 10)
+    weightSlider:SetValueStep(1)
+    weightSlider:SetValue(message.weight or 1)
+    
+    weightSlider:SetScript("OnValueChanged", function()
+        local value = this:GetValue()
+        message.weight = value
+        weightText:SetText("x" .. value)
+        -- Update the message list to show new weight
+        AutoSpam:UpdateMessageList()
+    end)
+    
+    yOffset = yOffset - 30
+    
+    -- Save Button (positioned next to character counter)
+    local saveButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    saveButton:SetWidth(60)
+    saveButton:SetHeight(20)
+    saveButton:SetPoint("RIGHT", charCount, "LEFT", -10, 0)
+    saveButton:SetText("Save")
+    saveButton:SetScript("OnClick", function()
+        message.text = textBox:GetText()
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message '" .. messageName .. "' saved.", 0, 1, 0)
+    end)
+    
+    -- Show the frame
+    frame:Show()
+end
+
+
+function AutoSpam:OpenHelpWindow()
+    local frameName = "AutoSpamHelpFrame"
+    
+    -- Check if help window already exists
+    local existingFrame = getglobal(frameName)
+    if existingFrame then
+        if existingFrame:IsVisible() then
+            existingFrame:Hide()
+        else
+            existingFrame:Show()
+        end
+        return
+    end
+    
+    -- Create help window (same style as edit windows)
+    local frame = CreateFrame("Frame", frameName, UIParent)
+    frame:SetWidth(355)
+    frame:SetHeight(450)
+    
+    -- Position to the left of main window
+    if self.SettingsFrame and self.SettingsFrame:IsVisible() then
+        frame:SetPoint("TOPRIGHT", self.SettingsFrame, "TOPLEFT", -5, 0)
+    else
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
+    
+    frame:SetFrameStrata("HIGH")
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.9)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() this:StartMoving() end)
+    frame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    
+    -- Register for escape key
+    table.insert(UISpecialFrames, frameName)
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", frame, "TOP", 0, -20)
+    title:SetText("AutoSpam Help")
+    title:SetTextColor(1, 0.82, 0)
+    
+    -- Close Button
+    local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", -5, -5)
+    closeButton:SetScript("OnClick", function()
+        frame:Hide()
+    end)
+    
+    -- Scroll Frame for help content
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame)
+    scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -50)
+    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -40, 20)
+    
+    -- Scroll Bar
+    local scrollBar = CreateFrame("Slider", nil, scrollFrame, "UIPanelScrollBarTemplate")
+    scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -50)
+    scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 20)
+    scrollBar:SetMinMaxValues(0, 910)
+    scrollBar:SetValueStep(20)
+    scrollBar:SetValue(0)
+    scrollBar:SetScript("OnValueChanged", function()
+        scrollFrame:SetVerticalScroll(this:GetValue())
+    end)
+    
+    -- Content Frame
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetWidth(295)
+    content:SetHeight(910)
+    scrollFrame:SetScrollChild(content)
+    
+    -- Enable mouse wheel scrolling
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function()
+        local current = scrollBar:GetValue()
+        local minVal, maxVal = scrollBar:GetMinMaxValues()
+        if arg1 > 0 then
+            scrollBar:SetValue(math.max(minVal, current - 40))
+        else
+            scrollBar:SetValue(math.min(maxVal, current + 40))
+        end
+    end)
+    
+    -- Help Text
+    local helpText = "|cFFFFD700WELCOME TO AUTOSPAM|r\n"
+    helpText = helpText .. "AutoSpam automatically posts messages to chat channels on a timer. Great for guild recruitment, selling items, raid advertisement, and more!\n\n"
+    
+    helpText = helpText .. "|cFFFFD700GETTING STARTED|r\n\n"
+    helpText = helpText .. "1. |cFF00FF00Add a Message|r\n"
+    helpText = helpText .. "   Type a name in the text box and click \"Add Message\"\n"
+    helpText = helpText .. "   Example: \"Guild Recruitment\" or \"Selling Herbs\"\n\n"
+    helpText = helpText .. "2. |cFF00FF00Edit the Message|r\n"
+    helpText = helpText .. "   Click \"Edit\" to open the message editor\n"
+    helpText = helpText .. "   - Write your message (max 255 characters)\n"
+    helpText = helpText .. "   - Select the chat channel\n"
+    helpText = helpText .. "   - Set the weight (how often it posts)\n"
+    helpText = helpText .. "   - Click \"Save\" when done\n\n"
+    helpText = helpText .. "3. |cFF00FF00Enable the Message|r\n"
+    helpText = helpText .. "   Check the box next to the message name to enable it\n\n"
+    helpText = helpText .. "4. |cFF00FF00Start Posting|r\n"
+    helpText = helpText .. "   Click \"Start Posting\" to begin auto-posting\n"
+    helpText = helpText .. "   First post goes out immediately if timer is full\n\n"
+    
+    helpText = helpText .. "|cFFFFD700MESSAGE SETTINGS|r\n\n"
+    helpText = helpText .. "|cFFFFFFFFChannel Options:|r\n"
+    helpText = helpText .. "- Say: Local say chat\n"
+    helpText = helpText .. "- Yell: Yell (larger radius)\n"
+    helpText = helpText .. "- Guild: Guild chat\n"
+    helpText = helpText .. "- Officer: Officer chat\n"
+    helpText = helpText .. "- Party: Party chat\n"
+    helpText = helpText .. "- Raid: Raid chat\n"
+    helpText = helpText .. "- World: World channel\n"
+    helpText = helpText .. "- Custom Channel: Enter channel name (e.g., \"Trade\", \"LookingForGroup\")\n\n"
+    
+    helpText = helpText .. "|cFFFFFFFFWeight System:|r\n"
+    helpText = helpText .. "Weight determines how often a message posts compared to others. Higher weight = posts more frequently.\n\n"
+    helpText = helpText .. "Examples:\n"
+    helpText = helpText .. "- Weight 1: Normal frequency (1x)\n"
+    helpText = helpText .. "- Weight 3: Posts 3x as often\n"
+    helpText = helpText .. "- Weight 10: Posts 10x as often\n\n"
+    helpText = helpText .. "If you have:\n"
+    helpText = helpText .. "- \"Raid LFM\" (weight 1)\n"
+    helpText = helpText .. "- \"Guild Recruitment\" (weight 5)\n"
+    helpText = helpText .. "Guild Recruitment will post 5 times as often as Raid LFM.\n\n"
+    
+    helpText = helpText .. "|cFFFFD700TIMER & POSTING|r\n\n"
+    helpText = helpText .. "|cFFFFFFFFPost Interval:|r\n"
+    helpText = helpText .. "Controls time between posts (1-10 minutes)\n"
+    helpText = helpText .. "Adjust the slider in the main window\n\n"
+    
+    helpText = helpText .. "|cFFFFFFFFTimer Behavior:|r\n"
+    helpText = helpText .. "- Timer starts when you click \"Start Posting\"\n"
+    helpText = helpText .. "- Timer counts down continuously once started\n"
+    helpText = helpText .. "- When timer hits 0, a random message posts (based on weight)\n"
+    helpText = helpText .. "- Clicking \"Stop Posting\" doesn't stop the timer\n"
+    helpText = helpText .. "- Timer only stops when it hits 0 while posting is disabled\n"
+    helpText = helpText .. "- Click \"Start Posting\" again to resume posting\n\n"
+    
+    helpText = helpText .. "|cFFFFFFFFPost Now Button:|r\n"
+    helpText = helpText .. "Posts immediately and resets the timer\n"
+    helpText = helpText .. "Useful when you want to post outside the schedule\n\n"
+    
+    helpText = helpText .. "|cFFFFD700MANAGING MESSAGES|r\n\n"
+    helpText = helpText .. "|cFFFFFFFFEdit:|r Opens the message editor\n"
+    helpText = helpText .. "|cFFFFFFFFRename:|r Click \"Rename\" button in edit window to change message name\n"
+    helpText = helpText .. "|cFFFFFFFFRemove:|r Deletes the message permanently\n"
+    helpText = helpText .. "|cFFFFFFFFUp/Down Arrows:|r Reorder messages in the list\n"
+    helpText = helpText .. "|cFFFFFFFFCheckbox:|r Enable/disable individual messages\n\n"
+    helpText = helpText .. "Messages with weight > 1 show \"(xN)\" in the list\n\n"
+    
+    helpText = helpText .. "|cFFFFD700TIPS & BEST PRACTICES|r\n\n"
+    helpText = helpText .. "1. |cFF00FF00Test First|r\n"
+    helpText = helpText .. "   Create test messages with short timers before going live\n\n"
+    helpText = helpText .. "2. |cFF00FF00Use Weights Strategically|r\n"
+    helpText = helpText .. "   Set higher weights for important messages\n"
+    helpText = helpText .. "   Keep promotional messages at lower weights\n\n"
+    helpText = helpText .. "3. |cFF00FF00Vary Your Messages|r\n"
+    helpText = helpText .. "   Create multiple versions of similar messages\n"
+    helpText = helpText .. "   Prevents spam appearance\n\n"
+    helpText = helpText .. "4. |cFF00FF00Watch the Timer|r\n"
+    helpText = helpText .. "   The countdown shows when next post happens\n"
+    helpText = helpText .. "   Stop posting before logging out to avoid accidental spam\n\n"
+    helpText = helpText .. "5. |cFF00FF00Channel Selection|r\n"
+    helpText = helpText .. "   Use appropriate channels for content\n"
+    helpText = helpText .. "   Trade items -> Trade channel\n"
+    helpText = helpText .. "   Recruitment -> World/Guild\n"
+    helpText = helpText .. "   Raid LFM -> World channel\n\n"
+    helpText = helpText .. "6. |cFF00FF00Character Limit|r\n"
+    helpText = helpText .. "   Messages turn red if over 255 characters\n"
+    helpText = helpText .. "   Keep messages concise and clear\n\n"
+    
+    helpText = helpText .. "|cFFFFD700MINIMAP BUTTON|r\n\n"
+    helpText = helpText .. "Click the minimap button to toggle the main window\n"
+    helpText = helpText .. "Right-click for quick actions\n\n"
+    
+    helpText = helpText .. "|cFFFFD700QUESTIONS?|r\n\n"
+    helpText = helpText .. "For bugs or feature requests, please open a GitHub issue and I will be happy to take a look.\n\n"
+    helpText = helpText .. "https://github.com/TheRealFayz/AutoSpam\n\n"
+    helpText = helpText .. "Happy posting!\n\n\n"
+    
+    -- Create text display
+    local textDisplay = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    textDisplay:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    textDisplay:SetWidth(285)
+    textDisplay:SetJustifyH("LEFT")
+    textDisplay:SetJustifyV("TOP")
+    textDisplay:SetText(helpText)
+    
+    frame:Show()
+end
+
+
+-- Updated Posting Functions
+
+function AutoSpam:TogglePosting()
+    self.db.enabled = not self.db.enabled
+    self.ToggleButton:SetText(self.db.enabled and "Stop Posting" or "Start Posting")
+    
+    if self.db.enabled then
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Started posting.", 0, 1, 0)
+        -- Start the timer on first "Start Posting" click
+        self.timerStarted = true
+        
+        -- If timer is at full interval (0 elapsed), post immediately
+        if self.timeSincePost == 0 then
+            self:PostRandomMessage()
+            -- Timer stays at 0 and will count up normally
+        end
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Stopped posting.", 1, 1, 0)
+        -- Timer continues counting even when stopped
+    end
+    
+    -- Update countdown text display
+    if self.CountdownText then
+        local remaining = self.db.interval - self.timeSincePost
+        local minutes = math.floor(remaining / 60)
+        local seconds = remaining - (minutes * 60)
+        self.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
+    end
+end
+
+function AutoSpam:PostNow()
+    -- Post immediately and reset timer
+    self:PostRandomMessage()
+    self.timeSincePost = 0
+    
+    -- Start timer if not already started
+    self.timerStarted = true
+    
+    -- Update countdown text to show full interval
+    if self.CountdownText then
+        local remaining = self.db.interval - self.timeSincePost
+        local minutes = math.floor(remaining / 60)
+        local seconds = remaining - (minutes * 60)
+        self.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
+    end
+end
+
+function AutoSpam:PostRandomMessage()
+    -- Get all enabled messages
+    local enabledMessages = {}
+    for _, msg in ipairs(self.db.messages) do
+        if msg.enabled then
+            table.insert(enabledMessages, msg)
+        end
+    end
+    
+    if AutoSpamDB.debugMode then
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: PostRandomMessage called", 1, 1, 0)
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Enabled messages count = " .. table.getn(enabledMessages), 1, 1, 0)
+    end
+    
+    if table.getn(enabledMessages) == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: No enabled messages to post.", 1, 0, 0)
+        return
+    end
+    
+    -- Build weighted pool (each message appears N times based on weight)
+    local weightedPool = {}
+    for _, msg in ipairs(enabledMessages) do
+        local weight = msg.weight or 1
+        for i = 1, weight do
+            table.insert(weightedPool, msg)
+        end
+    end
+    
+    -- Pick random message from weighted pool
+    local randomIndex = math.random(1, table.getn(weightedPool))
+    local msg = weightedPool[randomIndex]
+    
+    if not msg.text or msg.text == "" then
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message '" .. msg.name .. "' has no text. Skipping.", 1, 0.5, 0)
+        return
+    end
+    
+    -- Post to the message's configured channel
+    local channel = msg.channel
+    local customChannel = msg.customChannel
+    
+    if AutoSpamDB.debugMode then
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Posting '" .. msg.name .. "' to " .. channel, 0, 1, 1)
+    end
+    
+    if channel == "SAY" then
+        SendChatMessage(msg.text, "SAY")
+    elseif channel == "YELL" then
+        SendChatMessage(msg.text, "YELL")
+    elseif channel == "GUILD" then
+        SendChatMessage(msg.text, "GUILD")
+    elseif channel == "OFFICER" then
+        SendChatMessage(msg.text, "OFFICER")
+    elseif channel == "PARTY" then
+        SendChatMessage(msg.text, "PARTY")
+    elseif channel == "RAID" then
+        SendChatMessage(msg.text, "RAID")
+    elseif channel == "CHANNEL" then
+        if customChannel and customChannel ~= "" then
+            local channelNum = GetChannelName(customChannel)
+            if channelNum and channelNum > 0 then
+                SendChatMessage(msg.text, "CHANNEL", nil, channelNum)
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Channel '" .. customChannel .. "' not found.", 1, 0, 0)
             end
-            local selectedValue = this and this.value or channel.value
-            if AutoSpamDB.debugMode then
-                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Selected value = " .. tostring(selectedValue), 1, 0.5, 0)
-            end
-            AutoSpamDB.channel = selectedValue
-            UIDropDownMenu_SetSelectedValue(AutoSpam.ChannelDropdown, selectedValue)
-            if AutoSpamDB.debugMode then
-                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Set channel to " .. selectedValue, 0, 1, 1)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: No custom channel specified for '" .. msg.name .. "'.", 1, 0, 0)
+        end
+    elseif channel == "WORLD" then
+        -- World channel - try common world channel names
+        local worldChannels = {"World", "world", "LookingForGroup", "LFG"}
+        local sent = false
+        for _, chanName in ipairs(worldChannels) do
+            local channelNum = GetChannelName(chanName)
+            if channelNum and channelNum > 0 then
+                SendChatMessage(msg.text, "CHANNEL", nil, channelNum)
+                sent = true
+                break
             end
         end
-        info.checked = (AutoSpamDB.channel == channel.value)
-        if AutoSpamDB.debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("  " .. channel.text .. " checked = " .. tostring(info.checked), 0.7, 0.7, 0.7)
+        if not sent then
+            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: World channel not found.", 1, 0, 0)
         end
-        UIDropDownMenu_AddButton(info)
     end
 end
 
@@ -622,337 +1358,14 @@ function AutoSpam:ToggleSettingsFrame()
         self.SettingsFrame:Hide()
     else
         self.SettingsFrame:Show()
-        self:UpdateActiveMessageList()
-        self:LoadCurrentMessage()
+        self:UpdateMessageList()
         
-        -- Update timer text
-        if self.TimerText then
-            if self.db.enabled then
-                local remaining = self.db.interval - self.timeSincePost
-                local minutes = math.floor(remaining / 60)
-                local seconds = remaining - (minutes * 60)
-                self.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
-            else
-                local minutes = math.floor(self.db.interval / 60)
-                local seconds = self.db.interval - (minutes * 60)
-                self.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
-            end
-        end
-    end
-end
-
-function AutoSpam:SaveMessage(name, text)
-    if not name or name == "" then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Please enter a message name.", 1, 0, 0)
-        return
-    end
-    
-    if not text or text == "" then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Please enter message text.", 1, 0, 0)
-        return
-    end
-    
-    -- Check if updating existing message
-    local found = false
-    for i, msg in ipairs(self.db.messages) do
-        if msg.name == name then
-            msg.text = text
-            found = true
-            self.currentMessageIndex = i
-            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message '" .. name .. "' updated.", 0, 1, 0)
-            break
-        end
-    end
-    
-    if not found then
-        table.insert(self.db.messages, {name = name, text = text})
-        self.currentMessageIndex = table.getn(self.db.messages)
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message '" .. name .. "' saved.", 0, 1, 0)
-    end
-    
-    self:UpdateActiveMessageList()
-    self:UpdateCurrentMessageLabel()
-end
-
-function AutoSpam:DeleteCurrentMessage()
-    if table.getn(self.db.messages) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: No messages to delete.", 1, 0, 0)
-        return
-    end
-    
-    local msg = self.db.messages[self.currentMessageIndex]
-    if msg then
-        -- Remove from active messages if present
-        for i, name in ipairs(self.db.activeMessages) do
-            if name == msg.name then
-                table.remove(self.db.activeMessages, i)
-                break
-            end
-        end
-        
-        table.remove(self.db.messages, self.currentMessageIndex)
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message deleted.", 1, 1, 0)
-        
-        if self.currentMessageIndex > table.getn(self.db.messages) then
-            self.currentMessageIndex = table.getn(self.db.messages)
-        end
-        if self.currentMessageIndex < 1 then
-            self.currentMessageIndex = 1
-        end
-        
-        self:LoadCurrentMessage()
-        self:UpdateActiveMessageList()
-    end
-end
-
-function AutoSpam:NavigateMessage(direction)
-    if table.getn(self.db.messages) == 0 then
-        return
-    end
-    
-    self.currentMessageIndex = self.currentMessageIndex + direction
-    
-    if self.currentMessageIndex > table.getn(self.db.messages) then
-        self.currentMessageIndex = 1
-    elseif self.currentMessageIndex < 1 then
-        self.currentMessageIndex = table.getn(self.db.messages)
-    end
-    
-    self:LoadCurrentMessage()
-end
-
-function AutoSpam:LoadCurrentMessage()
-    if table.getn(self.db.messages) == 0 then
-        self.NameBox:SetText("")
-        self.TextBox:SetText("")
-        self:UpdateCurrentMessageLabel()
-        return
-    end
-    
-    local msg = self.db.messages[self.currentMessageIndex]
-    if msg then
-        self.NameBox:SetText(msg.name)
-        self.TextBox:SetText(msg.text)
-        self:UpdateCurrentMessageLabel()
-    end
-end
-
-function AutoSpam:UpdateCurrentMessageLabel()
-    if table.getn(self.db.messages) == 0 then
-        self.CurrentMsgLabel:SetText("No messages saved")
-    else
-        self.CurrentMsgLabel:SetText("Viewing message " .. self.currentMessageIndex .. " of " .. table.getn(self.db.messages))
-    end
-end
-
-function AutoSpam:UpdateActiveMessageList()
-    -- Clear old checkboxes
-    if self.ActiveCheckboxes then
-        for _, checkbox in ipairs(self.ActiveCheckboxes) do
-            checkbox:Hide()
-            checkbox:SetParent(nil)
-        end
-    end
-    self.ActiveCheckboxes = {}
-    
-    local yPos = -8
-    local numMessages = table.getn(self.db.messages)
-    
-    for i, msg in ipairs(self.db.messages) do
-        local isActive = false
-        for _, name in ipairs(self.db.activeMessages) do
-            if name == msg.name then
-                isActive = true
-                break
-            end
-        end
-        
-        -- Create button as direct child of content (without name to avoid reuse issues)
-        local button = CreateFrame("CheckButton", nil, self.SettingsContent)
-        button:SetWidth(18)
-        button:SetHeight(18)
-        -- Position it inside the activeBorder area
-        button:SetPoint("TOPLEFT", self.ActiveBorder, "TOPLEFT", 12, yPos - 4)
-        button:SetFrameLevel(self.SettingsContent:GetFrameLevel() + 100)
-        button:EnableMouse(true)
-        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        
-        if AutoSpamDB.debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Created checkbox " .. i .. " at yPos=" .. yPos, 0.5, 0.5, 0.5)
-        end
-        
-        button:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
-        button:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
-        button:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
-        button:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
-        button:SetDisabledCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check-Disabled")
-        
-        -- Make checkmark yellow
-        local checkedTexture = button:GetCheckedTexture()
-        checkedTexture:SetVertexColor(1, 1, 0)
-        
-        button:SetChecked(isActive)
-        
-        local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("LEFT", button, "RIGHT", 5, 0)
-        label:SetText(msg.name)
-        
-        -- Store checkbox reference so we can clear it later
-        table.insert(self.ActiveCheckboxes, button)
-        
-        -- Create local copy for closure
-        local messageName = msg.name
-        
-        button:SetScript("OnClick", function()
-            if AutoSpamDB.debugMode then
-                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: OnClick fired for: " .. messageName, 1, 0, 1)
-            end
-            AutoSpam:ToggleActiveMessage(messageName)
-        end)
-        
-        button:SetScript("OnMouseUp", function()
-            if AutoSpamDB.debugMode then
-                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: OnMouseUp fired for: " .. messageName, 1, 1, 0)
-            end
-        end)
-        
-        yPos = yPos - 20
-    end
-    
-    -- Update scrollbar range
-    local contentHeight = math.max(100, numMessages * 20 + 16)
-    self.ActiveList:SetHeight(contentHeight)
-    
-    local scrollFrameHeight = 100
-    local maxScroll = math.max(0, contentHeight - scrollFrameHeight)
-    self.ActiveScrollBar:SetMinMaxValues(0, maxScroll)
-    
-    if maxScroll == 0 then
-        self.ActiveScrollBar:Hide()
-    else
-        self.ActiveScrollBar:Show()
-    end
-end
-
-function AutoSpam:ToggleActiveMessage(name)
-    if AutoSpamDB.debugMode then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: ToggleActiveMessage called for: " .. name, 1, 1, 0)
-    end
-    
-    local found = false
-    for i, activeName in ipairs(self.db.activeMessages) do
-        if activeName == name then
-            table.remove(self.db.activeMessages, i)
-            found = true
-            if AutoSpamDB.debugMode then
-                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Removed from active list", 1, 0.5, 0)
-            end
-            break
-        end
-    end
-    
-    if not found then
-        table.insert(self.db.activeMessages, name)
-        if AutoSpamDB.debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Added to active list", 0, 1, 0)
-        end
-    end
-    
-    if AutoSpamDB.debugMode then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Active messages now: " .. table.getn(self.db.activeMessages), 1, 1, 0)
-    end
-    
-    self:UpdateActiveMessageList()
-end
-
-function AutoSpam:TogglePosting()
-    self.db.enabled = not self.db.enabled
-    self.ToggleButton:SetText(self.db.enabled and "Stop Posting" or "Start Posting")
-    
-    if self.db.enabled then
-        self.timeSincePost = 0
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Started posting.", 0, 1, 0)
-        -- Post immediately on start
-        self:PostRandomMessage()
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Stopped posting.", 1, 1, 0)
-    end
-    
-    -- Update timer text
-    if self.TimerText then
-        if self.db.enabled then
+        -- Update countdown text to current position
+        if self.CountdownText then
             local remaining = self.db.interval - self.timeSincePost
             local minutes = math.floor(remaining / 60)
             local seconds = remaining - (minutes * 60)
-            self.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
-        else
-            local minutes = math.floor(self.db.interval / 60)
-            local seconds = self.db.interval - (minutes * 60)
-            self.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
-        end
-    end
-end
-
-function AutoSpam:PostRandomMessage()
-    if AutoSpamDB.debugMode then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: PostRandomMessage called", 1, 1, 0)
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Active messages count = " .. table.getn(self.db.activeMessages), 1, 1, 0)
-        for i, name in ipairs(self.db.activeMessages) do
-            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG:   Active[" .. i .. "] = " .. name, 0.7, 0.7, 0.7)
-        end
-    end
-    
-    if table.getn(self.db.activeMessages) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: No active messages to post.", 1, 0, 0)
-        return
-    end
-    
-    -- Find all messages that are active
-    local activeMessageTexts = {}
-    for _, activeName in ipairs(self.db.activeMessages) do
-        for _, msg in ipairs(self.db.messages) do
-            if msg.name == activeName then
-                table.insert(activeMessageTexts, msg.text)
-                break
-            end
-        end
-    end
-    
-    if AutoSpamDB.debugMode then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Found " .. table.getn(activeMessageTexts) .. " active message texts", 1, 1, 0)
-    end
-    
-    if table.getn(activeMessageTexts) == 0 then
-        return
-    end
-    
-    -- Pick random message
-    local randomIndex = math.random(1, table.getn(activeMessageTexts))
-    local message = activeMessageTexts[randomIndex]
-    
-    -- Post to channel
-    if self.db.channel == "SAY" then
-        SendChatMessage(message, "SAY")
-    elseif self.db.channel == "YELL" then
-        SendChatMessage(message, "YELL")
-    elseif self.db.channel == "GUILD" then
-        SendChatMessage(message, "GUILD")
-    elseif self.db.channel == "OFFICER" then
-        SendChatMessage(message, "OFFICER")
-    elseif self.db.channel == "PARTY" then
-        SendChatMessage(message, "PARTY")
-    elseif self.db.channel == "RAID" then
-        SendChatMessage(message, "RAID")
-    elseif self.db.channel == "CHANNEL" then
-        if self.db.customChannel and self.db.customChannel ~= "" then
-            local channelNum = GetChannelName(self.db.customChannel)
-            if channelNum and channelNum > 0 then
-                SendChatMessage(message, "CHANNEL", nil, channelNum)
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Custom channel '" .. self.db.customChannel .. "' not found.", 1, 0, 0)
-            end
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: No custom channel specified.", 1, 0, 0)
+            self.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
         end
     end
 end
@@ -976,21 +1389,16 @@ local isInitialized = false
 
 local updateTimer = 0
 eventFrame:SetScript("OnUpdate", function()
-    -- Update timer text if frame is visible
-    if AutoSpam.TimerText and AutoSpam.SettingsFrame and AutoSpam.SettingsFrame:IsVisible() then
-        if AutoSpam.db and AutoSpam.db.enabled then
-            local remaining = AutoSpam.db.interval - AutoSpam.timeSincePost
-            local minutes = math.floor(remaining / 60)
-            local seconds = remaining - (minutes * 60)
-            AutoSpam.TimerText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
-        else
-            local minutes = math.floor(AutoSpam.db.interval / 60)
-            local seconds = AutoSpam.db.interval - (minutes * 60)
-            AutoSpam.TimerText:SetText(string.format("Interval: %d:%02d", minutes, seconds))
-        end
+    -- Update countdown text if frame is visible
+    if AutoSpam.CountdownText and AutoSpam.SettingsFrame and AutoSpam.SettingsFrame:IsVisible() then
+        local remaining = AutoSpam.db.interval - AutoSpam.timeSincePost
+        local minutes = math.floor(remaining / 60)
+        local seconds = remaining - (minutes * 60)
+        AutoSpam.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
     end
     
-    if not AutoSpam.db or not AutoSpam.db.enabled then
+    -- Timer only counts when it has been started (by clicking Start Posting)
+    if not AutoSpam.db or not AutoSpam.timerStarted then
         return
     end
     
@@ -999,8 +1407,16 @@ eventFrame:SetScript("OnUpdate", function()
         AutoSpam.timeSincePost = AutoSpam.timeSincePost + 1
         
         if AutoSpam.timeSincePost >= AutoSpam.db.interval then
-            AutoSpam:PostRandomMessage()
-            AutoSpam.timeSincePost = 0
+            -- Post only if enabled
+            if AutoSpam.db.enabled then
+                AutoSpam:PostRandomMessage()
+                -- Reset timer and keep cycling
+                AutoSpam.timeSincePost = 0
+            else
+                -- Reset timer and STOP counting (don't cycle)
+                AutoSpam.timeSincePost = 0
+                AutoSpam.timerStarted = false
+            end
         end
         
         updateTimer = 0
