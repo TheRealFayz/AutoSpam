@@ -1,135 +1,141 @@
 # AutoSpam
 
-AutoSpam is an automated message posting addon for World of Warcraft 1.12 and Turtle WoW. Post custom messages at configurable intervals to various chat channels.
+AutoSpam is a powerful automated message posting addon for World of Warcraft 1.12 and Turtle WoW. Manage multiple messages with weighted frequency control and post them automatically to various chat channels at customizable intervals.
 
 ## Features
 
-- **Minimap Button** - Easy access with draggable positioning (right-click drag)
-- **Message Management** - Save, edit, delete, and navigate through multiple messages
-- **Selective Posting** - Choose which messages to include in rotation
-- **Channel Support** - Say, Yell, Guild, Officer, Party, Raid, and Custom channels
-- **Flexible Intervals** - Set posting intervals from 1-10 minutes in 30-second increments
-- **Immediate Posting** - Posts first message immediately when started
-- **Compact UI** - Scrollable settings window that doesn't consume your screen
-- **Debug Mode** - Built-in debugging for troubleshooting
+### Core Functionality
+- **Weighted Message System** - Set weight (1-10) for each message to control posting frequency
+- **Multiple Channels** - Say, Yell, Guild, Officer, Party, Raid, World, and Custom channels
+- **Smart Timer** - Continues counting even when posting is stopped, resumes seamlessly
+- **Immediate First Post** - Posts instantly when starting if timer is at full interval
+- **Post Now Button** - Manually trigger a post outside the schedule
+- **Weighted Random Selection** - Messages with higher weight appear more frequently in rotation
 
-## Installation
+### Message Management
+- **Create & Edit** - Add unlimited messages with up to 255 characters each
+- **Rename Messages** - Change message names without recreating them
+- **Enable/Disable** - Checkbox toggle for each message
+- **Reorder Messages** - Up/Down arrows to organize your message list
+- **Weight Display** - Messages show "(x3)", "(x5)" etc. to indicate frequency multiplier
+- **Character Counter** - Real-time count with red warning at 255 characters
 
-1. Download the latest release
-2. Extract the `AutoSpam` folder to `World of Warcraft\Interface\AddOns\`
-3. Restart WoW or type `/console reloadui` in-game
+### User Interface
+- **Minimap Button** - "AS" text button with right-click drag positioning
+- **Scrollable Lists** - Clean message list with dark backgrounds
+- **Edit Windows** - Dedicated window for each message with all settings
+- **Help System** - Comprehensive built-in documentation
+- **Gold Theme** - Consistent gold text styling throughout
 
-## Usage
+## Quick Start Guide
 
-### Opening Settings
-- **Left-click** the chat bubble icon on your minimap
-- **Right-click drag** to reposition the minimap button
+### 1. Create Your First Message
+1. Click the **"AS"** minimap button to open settings
+2. Type a name in "Message Name:" field (e.g., "Guild Recruitment")
+3. Click **Add**
+4. Click **Edit** next to your new message
+5. Type your message text (max 255 characters)
+6. Select a channel from the dropdown
+7. Set the weight (1 = normal, 10 = posts 10x as often)
+8. Click **Save**
 
-### Creating Messages
-1. Enter a **Message Name** (e.g., "Guild Recruit")
-2. Enter your **Message Text**
-3. Click **Save**
-4. Use **< Prev** and **Next >** to browse saved messages
-5. Click **Delete** to remove the current message
-
-### Activating Messages
-1. Check the box next to each message you want to include in rotation
-2. Checked messages will be posted randomly at the set interval
-
-### Selecting Channel
-1. Click the **Channel Settings** dropdown
-2. Select your desired channel (Say, Yell, Guild, Officer, Party, Raid)
-3. For custom channels, enter the channel name in the **Custom Channel Name** field
-
-### Starting AutoSpam
-1. Set your **Post Interval** using the slider (1-10 minutes)
-2. Ensure at least one message is checked as active
+### 2. Enable and Start Posting
+1. Check the box next to your message to enable it
+2. Set your **Post Interval** slider (1-10 minutes)
 3. Click **Start Posting**
-4. The first message posts immediately, then continues at your set interval
-5. Click **Stop Posting** to pause
+4. First post goes out immediately!
+
+## How Weight Works
+
+Weight determines how often a message posts compared to others:
+
+**Example:**
+- Message A: Weight 1 (enabled)
+- Message B: Weight 5 (enabled)
+- Message C: Weight 2 (enabled)
+
+Message B will post ~5 times as often as Message A, and ~2.5 times as often as Message C.
+
+**Behind the scenes:** AutoSpam creates a weighted pool where each message appears N times based on its weight, then randomly selects from that pool.
+
+## Channel Options
+
+- **Say** - Local say chat
+- **Yell** - Yell (larger radius than say)
+- **Guild** - Guild chat
+- **Officer** - Officer chat only
+- **Party** - Party chat
+- **Raid** - Raid chat
+- **World** - World channel (searches for World, LookingForGroup, LFG)
+- **Custom Channel** - Enter any channel name (e.g., "Trade", "General")
+
+## Timer Behavior
+
+The timer in AutoSpam has smart behavior:
+
+1. Timer **starts** when you click "Start Posting"
+2. Timer **counts down continuously** once started
+3. Timer **does NOT stop** when you click "Stop Posting"
+4. Timer **only stops** when it hits 0 while posting is disabled
+5. Click "Start Posting" again to resume posting at current timer position
+
+**Why?** This prevents spam and allows you to pause/resume without resetting your interval.
+
+## Message Management Features
+
+### Editing Messages
+- Click **Edit** to open a dedicated edit window
+- Change message text, channel, and weight
+- Click **Save** to save changes (window stays open)
+- Click **X** to close
+
+### Renaming Messages
+1. Click **Edit** on a message
+2. Click **Rename** button next to the title
+3. Type new name and press Enter or click **Save**
+4. Press Escape to cancel
+
+### Reordering Messages
+- Use **Up/Down arrows** to change message order in the list
+- Order doesn't affect posting frequency (weight does)
+- Organize for your convenience
+
+### Deleting Messages
+- Click **Remove** to permanently delete a message
+- No confirmation prompt - be sure before clicking!
 
 ## Keyboard Shortcuts
 
-- **Escape** - Close the settings window
+- **Escape** - Close any AutoSpam window
+- **Enter** - Save changes when renaming a message
+- **Ctrl+C** - Copy (use in text fields)
+- **Ctrl+A** - Select all (use in text fields)
 
-## Debug Mode
+## Help Window
 
-Enable the **Debug Mode** checkbox at the top of settings to see detailed logging:
-- Channel selection changes
-- Message activation/deactivation
-- Active message counts
-- Posting events
-
-Debug messages appear in your chat window.
+Click the **Help** button (next to X) in the main window for comprehensive built-in documentation including:
+- Getting Started guide
+- Message Settings details
+- Weight System explanation
+- Timer & Posting behavior
+- Managing Messages tips
+- Best Practices
+- GitHub link for support
 
 ## Configuration
 
-All settings are saved per character in `WTF\Account\[AccountName]\[ServerName]\[CharacterName]\SavedVariables\AutoSpam.lua`
+All settings are saved per character in:
+```
+WTF\Account\[AccountName]\[ServerName]\[CharacterName]\SavedVariables\AutoSpam.lua
+```
 
-Saved settings include:
-- Minimap button position
-- All saved messages
-- Active message selections
-- Selected channel
-- Post interval
-- Enabled/disabled state
+## Best Practices
 
-## Troubleshooting
+1. **Test First** - Create test messages with short intervals before going live
+2. **Use Weights Strategically** - Higher weights for important messages, lower for promotional content
+3. **Vary Your Messages** - Create multiple versions to avoid spam appearance
+4. **Watch the Timer** - Check countdown before logging out
+5. **Appropriate Channels** - Use Trade for selling, World/Guild for recruitment, etc.
+6. **Character Limit** - Keep messages under 255 characters (turns red if over)
 
-**Minimap button not appearing:**
-- Type `/console reloadui` to reload the UI
-- Ensure the addon is enabled in the character select screen
-
-**Messages not posting:**
-- Verify at least one message is checked as active
-- Check that you have permission to post in the selected channel
-- Enable Debug Mode to see what's happening
-
-**Checkboxes not responding:**
-- This was a known issue in earlier versions - ensure you're using v1.17 or later
-
-**Window appears behind other UI:**
-- This should not occur in v1.4+, but try closing and reopening the window
-
-## Compatibility
-
-- **World of Warcraft:** 1.12 (Vanilla)
-- **Turtle WoW:** Fully compatible
-- **Lua Version:** 5.0
-
-## Technical Notes
-
-- Written in Lua 5.0 for WoW 1.12 compatibility
-- Uses SavedVariables for persistent storage
-- Frame strata and level management for proper UI layering
-- Anonymous CheckButton frames to avoid frame reuse issues
-
-## Version History
-
-**v1.17** - Current stable release
-- Fixed checkbox clicking via closure fix
-- Removed test/debug checkboxes
-- Production ready
-
-**v1.0-v1.16** - Development versions
-- Various bug fixes and improvements
-- Resolved frame strata issues
-- Fixed dropdown functionality
-- Implemented scrolling
-
-## Known Issues
-
-- Dropdown checkmark doesn't move visually (selection still works correctly)
-- Messages don't scroll within the Active Messages box (positioned absolutely)
-
-## License
-
-This addon is provided as-is for use with World of Warcraft 1.12 and Turtle WoW.
-
-## Support
-
-For bug reports or feature requests, please open an issue on the repository.
-
-## Credits
-
-Developed for the World of Warcraft 1.12 and Turtle WoW communities.
+*Happy posting!*
