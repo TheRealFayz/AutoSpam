@@ -1,6 +1,7 @@
 # AutoSpam
 
 AutoSpam is a powerful automated message posting addon for World of Warcraft 1.12 and Turtle WoW. Manage multiple messages with weighted frequency control and post them automatically to various chat channels at customizable intervals.
+<img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/GUI.png?raw=true">
 
 ## Features
 
