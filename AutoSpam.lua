@@ -38,8 +38,8 @@ function AutoSpam:Initialize()
     -- Always start disabled on login/reload
     self.db.enabled = false
     self.currentMessageIndex = 1
-    self.timeSincePost = 0
-    self.timerStarted = false  -- Timer only runs after first Start Posting click
+    self.lastPostTime = 0       -- GetTime() when last post occurred
+    self.timerStarted = false   -- Timer only runs after first Start Posting click
 end
 
 -- Minimap button functions
@@ -1244,22 +1244,21 @@ function AutoSpam:TogglePosting()
     
     if self.db.enabled then
         DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Started posting.", 0, 1, 0)
-        -- Start the timer on first "Start Posting" click
         self.timerStarted = true
         
-        -- If timer is at full interval (0 elapsed), post immediately
-        if self.timeSincePost == 0 then
+        -- If never posted before, post immediately and start the clock
+        if self.lastPostTime == 0 then
             self:PostRandomMessage()
-            -- Timer stays at 0 and will count up normally
+            self.lastPostTime = GetTime()
         end
     else
         DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Stopped posting.", 1, 1, 0)
-        -- Timer continues counting even when stopped
     end
     
     -- Update countdown text display
     if self.CountdownText then
-        local remaining = self.db.interval - self.timeSincePost
+        local elapsed = GetTime() - self.lastPostTime
+        local remaining = math.max(0, self.db.interval - elapsed)
         local minutes = math.floor(remaining / 60)
         local seconds = remaining - (minutes * 60)
         self.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
@@ -1269,16 +1268,13 @@ end
 function AutoSpam:PostNow()
     -- Post immediately and reset timer
     self:PostRandomMessage()
-    self.timeSincePost = 0
-    
-    -- Start timer if not already started
+    self.lastPostTime = GetTime()
     self.timerStarted = true
     
     -- Update countdown text to show full interval
     if self.CountdownText then
-        local remaining = self.db.interval - self.timeSincePost
-        local minutes = math.floor(remaining / 60)
-        local seconds = remaining - (minutes * 60)
+        local minutes = math.floor(self.db.interval / 60)
+        local seconds = self.db.interval - (minutes * 60)
         self.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
     end
 end
@@ -1352,7 +1348,6 @@ function AutoSpam:PostRandomMessage()
             DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: No custom channel specified for '" .. msg.name .. "'.", 1, 0, 0)
         end
     elseif channel == "WORLD" then
-        -- World channel - try common world channel names
         local worldChannels = {"World", "world", "LookingForGroup", "LFG"}
         local sent = false
         for _, chanName in ipairs(worldChannels) do
@@ -1382,7 +1377,8 @@ function AutoSpam:ToggleSettingsFrame()
         
         -- Update countdown text to current position
         if self.CountdownText then
-            local remaining = self.db.interval - self.timeSincePost
+            local elapsed = GetTime() - self.lastPostTime
+            local remaining = math.max(0, self.db.interval - elapsed)
             local minutes = math.floor(remaining / 60)
             local seconds = remaining - (minutes * 60)
             self.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
@@ -1407,39 +1403,32 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 local isInitialized = false
 
-local updateTimer = 0
 eventFrame:SetScript("OnUpdate", function()
-    -- Update countdown text if frame is visible
-    if AutoSpam.CountdownText and AutoSpam.SettingsFrame and AutoSpam.SettingsFrame:IsVisible() then
-        local remaining = AutoSpam.db.interval - AutoSpam.timeSincePost
-        local minutes = math.floor(remaining / 60)
-        local seconds = remaining - (minutes * 60)
-        AutoSpam.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
-    end
-    
-    -- Timer only counts when it has been started (by clicking Start Posting)
     if not AutoSpam.db or not AutoSpam.timerStarted then
         return
     end
-    
-    updateTimer = updateTimer + arg1
-    if updateTimer >= 1 then
-        AutoSpam.timeSincePost = AutoSpam.timeSincePost + 1
-        
-        if AutoSpam.timeSincePost >= AutoSpam.db.interval then
-            -- Post only if enabled
-            if AutoSpam.db.enabled then
-                AutoSpam:PostRandomMessage()
-                -- Reset timer and keep cycling
-                AutoSpam.timeSincePost = 0
-            else
-                -- Reset timer and STOP counting (don't cycle)
-                AutoSpam.timeSincePost = 0
-                AutoSpam.timerStarted = false
-            end
+
+    local now = GetTime()
+    local elapsed = now - AutoSpam.lastPostTime
+    local remaining = AutoSpam.db.interval - elapsed
+
+    -- Update countdown text if frame is visible
+    if AutoSpam.CountdownText and AutoSpam.SettingsFrame and AutoSpam.SettingsFrame:IsVisible() then
+        local displayRemaining = math.max(0, remaining)
+        local minutes = math.floor(displayRemaining / 60)
+        local seconds = displayRemaining - (minutes * 60)
+        AutoSpam.CountdownText:SetText(string.format("Next post in: %d:%02d", minutes, seconds))
+    end
+
+    -- Check if interval has elapsed
+    if elapsed >= AutoSpam.db.interval then
+        if AutoSpam.db.enabled then
+            AutoSpam.lastPostTime = now
+            AutoSpam:PostRandomMessage()
+        else
+            AutoSpam.timerStarted = false
+            AutoSpam.lastPostTime = 0
         end
-        
-        updateTimer = 0
     end
 end)
 
