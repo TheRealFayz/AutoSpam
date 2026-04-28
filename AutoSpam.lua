@@ -1,5 +1,5 @@
 -- AutoSpam: Automatically post messages at intervals
--- Compatible with WoW 1.12 and Turtle WoW
+-- Compatible with WoW 3.3.5 and Project Epoch
 
 AutoSpam = {}
 AutoSpam.MinimapButton = {}
@@ -74,43 +74,43 @@ function AutoSpam:CreateMinimapButton()
     overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     overlay:SetPoint("TOPLEFT", 0, 0)
     
-    button:SetScript("OnClick", function()
-        if arg1 == "LeftButton" then
+    button:SetScript("OnClick", function(self, btn, down)
+        if btn == "LeftButton" then
             if AutoSpam.SettingsFrame then
                 AutoSpam:ToggleSettingsFrame()
             end
         end
     end)
     
-    button:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:SetText("AutoSpam")
         GameTooltip:AddLine("Left-click: Open settings", 1, 1, 1)
         GameTooltip:AddLine("Right-click and drag: Move button", 1, 1, 1)
         GameTooltip:Show()
     end)
     
-    button:SetScript("OnLeave", function()
+    button:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
     end)
     
     -- Dragging functionality (right-click drag only to avoid conflict)
-    button:SetScript("OnMouseDown", function()
-        if arg1 == "RightButton" then
-            this.isMoving = true
-            this:LockHighlight()
+    button:SetScript("OnMouseDown", function(self, btn)
+        if btn == "RightButton" then
+            self.isMoving = true
+            self:LockHighlight()
         end
     end)
     
-    button:SetScript("OnMouseUp", function()
-        if arg1 == "RightButton" then
-            this.isMoving = false
-            this:UnlockHighlight()
+    button:SetScript("OnMouseUp", function(self, btn)
+        if btn == "RightButton" then
+            self.isMoving = false
+            self:UnlockHighlight()
         end
     end)
     
-    button:SetScript("OnUpdate", function()
-        if this.isMoving then
+    button:SetScript("OnUpdate", function(self, elapsed)
+        if self.isMoving then
             local mx, my = GetCursorPosition()
             local px, py = Minimap:GetCenter()
             local scale = Minimap:GetEffectiveScale()
@@ -157,8 +157,8 @@ function AutoSpam:CreateSettingsFrame()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function() this:StartMoving() end)
-    frame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     frame:Hide()
     
     -- Register for escape key
@@ -178,7 +178,7 @@ function AutoSpam:CreateSettingsFrame()
     -- Close Button
     local closeButton = CreateFrame("Button", "AutoSpamCloseButton", frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
-    closeButton:SetScript("OnClick", function()
+    closeButton:SetScript("OnClick", function(self)
         -- Close all edit windows
         if AutoSpam.EditFrames then
             for _, editFrame in ipairs(AutoSpam.EditFrames) do
@@ -204,7 +204,7 @@ function AutoSpam:CreateSettingsFrame()
     helpButton:SetHeight(20)
     helpButton:SetPoint("RIGHT", closeButton, "LEFT", -5, 0)
     helpButton:SetText("Help")
-    helpButton:SetScript("OnClick", function()
+    helpButton:SetScript("OnClick", function(self)
         AutoSpam:OpenHelpWindow()
     end)
     
@@ -216,7 +216,7 @@ function AutoSpam:CreateSettingsFrame()
     toggleButton:SetHeight(25)
     toggleButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, yOffset)
     toggleButton:SetText(self.db.enabled and "Stop Posting" or "Start Posting")
-    toggleButton:SetScript("OnClick", function()
+    toggleButton:SetScript("OnClick", function(self)
         AutoSpam:TogglePosting()
     end)
     self.ToggleButton = toggleButton
@@ -227,7 +227,7 @@ function AutoSpam:CreateSettingsFrame()
     postNowButton:SetHeight(25)
     postNowButton:SetPoint("LEFT", toggleButton, "RIGHT", 5, 0)
     postNowButton:SetText("Post Now")
-    postNowButton:SetScript("OnClick", function()
+    postNowButton:SetScript("OnClick", function(self)
         AutoSpam:PostNow()
     end)
     
@@ -267,8 +267,8 @@ function AutoSpam:CreateSettingsFrame()
     getglobal(intervalSlider:GetName() .. "Low"):SetText("1 min")
     getglobal(intervalSlider:GetName() .. "High"):SetText("10 min")
     
-    intervalSlider:SetScript("OnValueChanged", function()
-        local value = this:GetValue()
+    intervalSlider:SetScript("OnValueChanged", function(self)
+        local value = self:GetValue()
         AutoSpamDB.interval = value
         
         -- Update interval display only (not the countdown timer)
@@ -306,7 +306,7 @@ function AutoSpam:CreateSettingsFrame()
     addButton:SetHeight(25)
     addButton:SetPoint("LEFT", nameBox, "RIGHT", 5, 0)
     addButton:SetText("Add")
-    addButton:SetScript("OnClick", function()
+    addButton:SetScript("OnClick", function(self)
         local name = nameBox:GetText()
         if name and name ~= "" then
             AutoSpam:AddNewMessage(name)
@@ -361,8 +361,8 @@ function AutoSpam:CreateSettingsFrame()
     scrollThumb:SetHeight(20)
     scrollBar:SetThumbTexture(scrollThumb)
     
-    scrollBar:SetScript("OnValueChanged", function()
-        scrollFrame:SetVerticalScroll(this:GetValue())
+    scrollBar:SetScript("OnValueChanged", function(self)
+        scrollFrame:SetVerticalScroll(self:GetValue())
     end)
     
     -- Content frame for messages
@@ -374,10 +374,10 @@ function AutoSpam:CreateSettingsFrame()
     
     -- Enable mouse wheel scrolling
     scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function()
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local current = scrollBar:GetValue()
         local minVal, maxVal = scrollBar:GetMinMaxValues()
-        if arg1 > 0 then
+        if delta > 0 then
             scrollBar:SetValue(math.max(minVal, current - 20))
         else
             scrollBar:SetValue(math.min(maxVal, current + 20))
@@ -428,7 +428,7 @@ function AutoSpam:UpdateMessageList()
     self.MessageRows = {}
     
     local yPos = -5
-    local numMessages = table.getn(self.db.messages)
+    local numMessages = #self.db.messages
     
     for i, msg in ipairs(self.db.messages) do
         -- Create row frame with background
@@ -465,7 +465,7 @@ function AutoSpam:UpdateMessageList()
         checkbox:SetChecked(msg.enabled)
         
         local messageName = msg.name
-        checkbox:SetScript("OnClick", function()
+        checkbox:SetScript("OnClick", function(self)
             AutoSpam:ToggleMessageEnabled(messageName)
         end)
         
@@ -494,7 +494,7 @@ function AutoSpam:UpdateMessageList()
         upButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up")
         
         local messageIndex = i
-        upButton:SetScript("OnClick", function()
+        upButton:SetScript("OnClick", function(self)
             AutoSpam:MoveMessageUp(messageIndex)
         end)
         if i == 1 then
@@ -511,7 +511,7 @@ function AutoSpam:UpdateMessageList()
         downButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
         downButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down")
         downButton:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
-        downButton:SetScript("OnClick", function()
+        downButton:SetScript("OnClick", function(self)
             AutoSpam:MoveMessageDown(messageIndex)
         end)
         if i == numMessages then
@@ -524,7 +524,7 @@ function AutoSpam:UpdateMessageList()
         editButton:SetHeight(20)
         editButton:SetPoint("LEFT", downButton, "RIGHT", 2, 0)
         editButton:SetText("Edit")
-        editButton:SetScript("OnClick", function()
+        editButton:SetScript("OnClick", function(self)
             AutoSpam:OpenEditWindow(messageName)
         end)
         
@@ -534,7 +534,7 @@ function AutoSpam:UpdateMessageList()
         removeButton:SetHeight(20)
         removeButton:SetPoint("LEFT", editButton, "RIGHT", 2, 0)
         removeButton:SetText("Remove")
-        removeButton:SetScript("OnClick", function()
+        removeButton:SetScript("OnClick", function(self)
             AutoSpam:RemoveMessage(messageName)
         end)
         
@@ -580,7 +580,7 @@ function AutoSpam:MoveMessageUp(index)
 end
 
 function AutoSpam:MoveMessageDown(index)
-    if index < table.getn(self.db.messages) then
+    if index < #self.db.messages then
         local temp = self.db.messages[index]
         self.db.messages[index] = self.db.messages[index + 1]
         self.db.messages[index + 1] = temp
@@ -623,6 +623,20 @@ function AutoSpam:OpenEditWindow(messageName)
             existingFrame:Hide()
         else
             existingFrame:Show()
+            
+            -- Reload text box from saved message text (discard any unsaved edits)
+            if existingFrame.textBox then
+                local message = nil
+                for _, msg in ipairs(self.db.messages) do
+                    if msg.name == messageName then
+                        message = msg
+                        break
+                    end
+                end
+                if message then
+                    existingFrame.textBox:SetText(message.text or "")
+                end
+            end
             
             -- Update dropdown text when showing existing window
             local dropdownName = "AutoSpamEditChannelDD_" .. sanitizedName
@@ -709,8 +723,8 @@ function AutoSpam:OpenEditWindow(messageName)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function() this:StartMoving() end)
-    frame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     
     -- Register for escape key
     table.insert(UISpecialFrames, frameName)
@@ -739,7 +753,7 @@ function AutoSpam:OpenEditWindow(messageName)
     
     local isRenaming = false
     
-    renameButton:SetScript("OnClick", function()
+    renameButton:SetScript("OnClick", function(self)
         if not isRenaming then
             -- Enter rename mode
             isRenaming = true
@@ -791,23 +805,23 @@ function AutoSpam:OpenEditWindow(messageName)
     end)
     
     -- Allow Enter key to save rename
-    nameEditBox:SetScript("OnEnterPressed", function()
-        renameButton:GetScript("OnClick")()
+    nameEditBox:SetScript("OnEnterPressed", function(self)
+        renameButton:GetScript("OnClick")(renameButton)
     end)
     
     -- Allow Escape key to cancel rename
-    nameEditBox:SetScript("OnEscapePressed", function()
+    nameEditBox:SetScript("OnEscapePressed", function(self)
         nameEditBox:Hide()
         title:Show()
         renameButton:SetText("Rename")
         isRenaming = false
-        this:ClearFocus()
+        self:ClearFocus()
     end)
     
     -- Close Button
     local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
-    closeButton:SetScript("OnClick", function()
+    closeButton:SetScript("OnClick", function(self)
         frame:Hide()
     end)
     
@@ -838,17 +852,26 @@ function AutoSpam:OpenEditWindow(messageName)
     local textScrollFrame = CreateFrame("ScrollFrame", nil, textBorder)
     textScrollFrame:SetPoint("TOPLEFT", textBorder, "TOPLEFT", 4, -4)
     textScrollFrame:SetPoint("BOTTOMRIGHT", textBorder, "BOTTOMRIGHT", -4, 4)
+    textScrollFrame:EnableMouse(true)
     
     local textBox = CreateFrame("EditBox", nil, textScrollFrame)
     textBox:SetWidth(305)
     textBox:SetHeight(90)
     textBox:SetMultiLine(true)
     textBox:SetAutoFocus(false)
+    textBox:EnableMouse(true)
+    textBox:EnableKeyboard(true)
     textBox:SetFontObject(GameFontNormal)
     textBox:SetTextInsets(5, 5, 5, 5)  -- Add padding inside the text box
     textBox:SetText(message.text or "")
-    textBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    textBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     textScrollFrame:SetScrollChild(textBox)
+    frame.textBox = textBox  -- Store reference for reload on re-show
+    
+    -- Forward clicks on the scroll area to focus the editbox
+    textScrollFrame:SetScript("OnMouseDown", function(self)
+        textBox:SetFocus()
+    end)
     
     -- Character counter
     local charCount = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -862,10 +885,8 @@ function AutoSpam:OpenEditWindow(messageName)
     end
     
     -- Update character counter on text change
-    textBox:SetScript("OnTextChanged", function()
-        local text = this:GetText()
-        message.text = text  -- Save to message
-        local length = string.len(text)
+    textBox:SetScript("OnTextChanged", function(self)
+        local length = string.len(self:GetText())
         charCount:SetText(length .. " / 255")
         if length <= 255 then
             charCount:SetTextColor(0, 1, 0)  -- Green
@@ -898,14 +919,14 @@ function AutoSpam:OpenEditWindow(messageName)
     customChannelBox:SetText(message.customChannel or "")
     customChannelBox:EnableMouse(true)
     customChannelBox:EnableKeyboard(true)
-    customChannelBox:SetScript("OnTextChanged", function()
-        message.customChannel = this:GetText()
+    customChannelBox:SetScript("OnTextChanged", function(self)
+        message.customChannel = self:GetText()
     end)
-    customChannelBox:SetScript("OnEscapePressed", function() 
-        this:ClearFocus() 
+    customChannelBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
     end)
-    customChannelBox:SetScript("OnEnterPressed", function() 
-        this:ClearFocus() 
+    customChannelBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
     end)
     customChannelBox:Hide()  -- Hidden by default
     
@@ -1011,8 +1032,8 @@ function AutoSpam:OpenEditWindow(messageName)
     weightSlider:SetValueStep(1)
     weightSlider:SetValue(message.weight or 1)
     
-    weightSlider:SetScript("OnValueChanged", function()
-        local value = this:GetValue()
+    weightSlider:SetScript("OnValueChanged", function(self)
+        local value = self:GetValue()
         message.weight = value
         weightText:SetText("x" .. value)
         -- Update the message list to show new weight
@@ -1027,7 +1048,7 @@ function AutoSpam:OpenEditWindow(messageName)
     saveButton:SetHeight(20)
     saveButton:SetPoint("RIGHT", charCount, "LEFT", -10, 0)
     saveButton:SetText("Save")
-    saveButton:SetScript("OnClick", function()
+    saveButton:SetScript("OnClick", function(self)
         message.text = textBox:GetText()
         DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: Message '" .. messageName .. "' saved.", 0, 1, 0)
     end)
@@ -1074,8 +1095,8 @@ function AutoSpam:OpenHelpWindow()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function() this:StartMoving() end)
-    frame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     
     -- Register for escape key
     table.insert(UISpecialFrames, frameName)
@@ -1089,7 +1110,7 @@ function AutoSpam:OpenHelpWindow()
     -- Close Button
     local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
-    closeButton:SetScript("OnClick", function()
+    closeButton:SetScript("OnClick", function(self)
         frame:Hide()
     end)
     
@@ -1105,8 +1126,8 @@ function AutoSpam:OpenHelpWindow()
     scrollBar:SetMinMaxValues(0, 910)
     scrollBar:SetValueStep(20)
     scrollBar:SetValue(0)
-    scrollBar:SetScript("OnValueChanged", function()
-        scrollFrame:SetVerticalScroll(this:GetValue())
+    scrollBar:SetScript("OnValueChanged", function(self)
+        scrollFrame:SetVerticalScroll(self:GetValue())
     end)
     
     -- Content Frame
@@ -1117,10 +1138,10 @@ function AutoSpam:OpenHelpWindow()
     
     -- Enable mouse wheel scrolling
     scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function()
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local current = scrollBar:GetValue()
         local minVal, maxVal = scrollBar:GetMinMaxValues()
-        if arg1 > 0 then
+        if delta > 0 then
             scrollBar:SetValue(math.max(minVal, current - 40))
         else
             scrollBar:SetValue(math.min(maxVal, current + 40))
@@ -1290,10 +1311,10 @@ function AutoSpam:PostRandomMessage()
     
     if AutoSpamDB.debugMode then
         DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: PostRandomMessage called", 1, 1, 0)
-        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Enabled messages count = " .. table.getn(enabledMessages), 1, 1, 0)
+        DEFAULT_CHAT_FRAME:AddMessage("AutoSpam DEBUG: Enabled messages count = " .. #enabledMessages, 1, 1, 0)
     end
     
-    if table.getn(enabledMessages) == 0 then
+    if #enabledMessages == 0 then
         DEFAULT_CHAT_FRAME:AddMessage("AutoSpam: No enabled messages to post.", 1, 0, 0)
         return
     end
@@ -1308,7 +1329,7 @@ function AutoSpam:PostRandomMessage()
     end
     
     -- Pick random message from weighted pool
-    local randomIndex = math.random(1, table.getn(weightedPool))
+    local randomIndex = math.random(1, #weightedPool)
     local msg = weightedPool[randomIndex]
     
     if not msg.text or msg.text == "" then
@@ -1403,7 +1424,7 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 local isInitialized = false
 
-eventFrame:SetScript("OnUpdate", function()
+eventFrame:SetScript("OnUpdate", function(self, elapsed)
     if not AutoSpam.db or not AutoSpam.timerStarted then
         return
     end
@@ -1432,7 +1453,7 @@ eventFrame:SetScript("OnUpdate", function()
     end
 end)
 
-eventFrame:SetScript("OnEvent", function()
+eventFrame:SetScript("OnEvent", function(self, event)
     if isInitialized then
         return
     end
