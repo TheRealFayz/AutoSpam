@@ -2,7 +2,8 @@
 
 AutoSpam posts your messages to chat on a timer so you don't have to. Set up your guild recruitment, raid LFM, or trade posts once, pick how often each one should go out, and let it run. Built for World of Warcraft 1.12 and Turtle WoW.
 
-<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Messages.png?raw=true" alt="AutoSpam Messages tab"></p>
+![BigTimer](https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Messages.png?raw=true) ![BigTimer](https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Editor.png?raw=true)
+![BigTimer](https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Settings.png?raw=true) ![BigTimer](https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Help.png?raw=true)
 
 ## Features
 
