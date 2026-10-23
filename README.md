@@ -2,14 +2,7 @@
 
 AutoSpam posts your messages to chat on a timer so you don't have to. Set up your guild recruitment, raid LFM, or trade posts once, pick how often each one should go out, and let it run. Built for World of Warcraft 1.12 and Turtle WoW.
 
-You can also download BigTimer from OctoWoW's [Gitea](https://octowow.st/git/Fayz/AutoSpam).
-
-<p align="center">
-  <img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Messages.png?raw=true" alt="AutoSpam Messages tab" width="24%" align="top">
-  <img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Editor.png?raw=true" alt="AutoSpam Editor tab" width="24%" align="top">
-  <img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Settings.png?raw=true" alt="AutoSpam Settings tab" width="24%" align="top">
-  <img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Help.png?raw=true" alt="AutoSpam Help tab" width="24%" align="top">
-</p>
+You can also download BigTimer from OctoWoW's [Gitea](https://octowow.st/git/Fayz/BigTimer).
 
 ## Features
 
@@ -49,6 +42,8 @@ Each message shows its channels, name, weight (if above 1), `(inv)` if auto-invi
 - **Click the row** to open it in the Editor.
 - **Up and down arrows** change the order. Order is just for you; weight decides how often things post.
 - **The X** deletes the message after you confirm.
+
+<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Messages.png?raw=true" alt="AutoSpam Messages tab"></p>
 
 ## The Editor
 
