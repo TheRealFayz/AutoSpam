@@ -2,7 +2,7 @@
 
 AutoSpam posts your messages to chat on a timer so you don't have to. Set up your guild recruitment, raid LFM, or trade posts once, pick how often each one should go out, and let it run. Built for World of Warcraft 1.12 and Turtle WoW.
 
-You can also download BigTimer from OctoWoW's [Gitea](https://octowow.st/git/Fayz/BigTimer).
+You can also download BigTimer from OctoWoW's [Gitea](https://octowow.st/git/Fayz/AutoSpam).
 
 ## Features
 
