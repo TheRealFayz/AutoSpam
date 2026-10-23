@@ -1,144 +1,155 @@
 # AutoSpam
 
-If you are looking for the 1.12 version, download the [release](https://github.com/TheRealFayz/AutoSpam/releases/tag/1.12).  This is now being updated for 3.3.5.
+AutoSpam posts your messages to chat on a timer so you don't have to. Set up your guild recruitment, raid LFM, or trade posts once, pick how often each one should go out, and let it run. Built for World of Warcraft 1.12 and Turtle WoW.
 
-AutoSpam is a powerful automated message posting addon for World of Warcraft 1.12 and Turtle WoW. Manage multiple messages with weighted frequency control and post them automatically to various chat channels at customizable intervals.
-<img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/GUI.png?raw=true">
+<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Messages.png?raw=true" alt="AutoSpam Messages tab"></p>
 
 ## Features
 
-### Core Functionality
-- **Weighted Message System** - Set weight (1-10) for each message to control posting frequency
-- **Multiple Channels** - Say, Yell, Guild, Officer, Party, Raid, World, and Custom channels
-- **Smart Timer** - Continues counting even when posting is stopped, resumes seamlessly
-- **Immediate First Post** - Posts instantly when starting if timer is at full interval
-- **Post Now Button** - Manually trigger a post outside the schedule
-- **Weighted Random Selection** - Messages with higher weight appear more frequently in rotation
+- **One window, four tabs.** Messages, Editor, Settings, and Help live on spellbook style tabs along the right edge.
+- **Weighted rotation.** Give each message a weight from 1 to 10. Higher weight means it comes up more often.
+- **See what's next.** The header shows which message posts next, how long you've been running, how many posts went out, and a countdown to the next one.
+- **Any channels you want.** Check as many as you like per message: Say, Yell, Guild, Officer, Party, Raid, World, or a custom channel you've joined.
+- **Placeholders.** Put `{GROUP}`, `{ZONE}`, `{TIME}`, `{NAME}` or `{GUILD}` in a message and it's filled in every time it posts.
+- **Auto-invite per message.** Turn it on for your raid LFM and leave it off for guild recruiting. Each message has its own keywords and its own convert to raid option.
+- **Item links.** Shift-click items in your bags, on your character, or links in chat to drop them into a message.
+- **Safe logins.** If you logged out with posting still on, nothing posts when you log back in. A popup gives you 2 minutes to choose Post now, otherwise AutoSpam turns itself off.
+- **AFK friendly.** If you're flagged AFK when a post is due, AutoSpam clears the flag first so the message actually goes out.
+- **Dry run.** Prints what would be posted to your own chat window and sends nothing. Each dry run post pops up a reminder that counts down to the next one and has a button to go live, so you can't forget it's on.
+- **Explicit save.** Edits only stick when you click Save. If you try to leave with unsaved changes, it asks first.
+- **Resizable.** Drag the grip in the bottom right corner to make the window bigger or smaller. Right-click it to reset.
 
-### Message Management
-- **Create & Edit** - Add unlimited messages with up to 255 characters each
-- **Rename Messages** - Change message names without recreating them
-- **Enable/Disable** - Checkbox toggle for each message
-- **Reorder Messages** - Up/Down arrows to organize your message list
-- **Weight Display** - Messages show "(x3)", "(x5)" etc. to indicate frequency multiplier
-- **Character Counter** - Real-time count with red warning at 255 characters
+## Installation
 
-### User Interface
-- **Minimap Button** - "AS" text button with right-click drag positioning
-- **Scrollable Lists** - Clean message list with dark backgrounds
-- **Edit Windows** - Dedicated window for each message with all settings
-- **Help System** - Comprehensive built-in documentation
-- **Gold Theme** - Consistent gold text styling throughout
+1. Download the latest release.
+2. Put the `AutoSpam` folder in `World of Warcraft\Interface\AddOns\`. If you downloaded the code as a zip from GitHub, the folder will be called `AutoSpam-main`. Rename it to `AutoSpam` or WoW won't load it.
+3. Make sure the folder has `AutoSpam.toc`, `AutoSpam.lua`, `AutoSpamUI.lua`, and the `Textures` folder.
+4. Restart WoW completely. A `/reload` won't pick up new files.
 
-## Quick Start Guide
+## Quick Start
 
-### 1. Create Your First Message
-1. Click the **"AS"** minimap button to open settings
-2. Type a name in "Message Name:" field (e.g., "Guild Recruitment")
-3. Click **Add**
-4. Click **Edit** next to your new message
-5. Type your message text (max 255 characters)
-6. Select a channel from the dropdown
-7. Set the weight (1 = normal, 10 = posts 10x as often)
-8. Click **Save**
+1. Click the **AS** minimap button or type `/autospam`. You can move the minimap button by right-click dragging it.
+2. On the **Messages** tab, type a name and click **Add**.
+3. The **Editor** opens. Write your message, check one or more channels, set a weight, and click **Save**.
+4. Back on **Messages**, check the box next to your message to enable it.
+5. Click **Start**. The first post goes out right away.
 
-### 2. Enable and Start Posting
-1. Check the box next to your message to enable it
-2. Set your **Post Interval** slider (1-10 minutes)
-3. Click **Start Posting**
-4. First post goes out immediately!
+## The Messages Tab
+
+Each message shows its channels, name, weight (if above 1), `(inv)` if auto-invite is on, and a preview of the text.
+
+- **Checkbox** turns the message on or off in the rotation.
+- **Click the row** to open it in the Editor.
+- **Up and down arrows** change the order. Order is just for you; weight decides how often things post.
+- **The X** deletes the message after you confirm.
+
+## The Editor
+
+- **Name** can be changed here. Names have to be unique.
+- **Message text** holds up to 255 characters, which is the most WoW will send in one chat message. Line breaks are turned into spaces since chat can't send them.
+- **Channel** opens a list where you check every channel the message should go to. Click a channel again to uncheck it. Check Custom Channel to type a channel name.
+- **Weight** sets how often it comes up compared to your other messages.
+- **Auto-invite on whisper** turns on invites for this message. See below.
+- **Save** keeps your changes. **Revert** puts the message back the way it was.
+
+<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Editor.png?raw=true" alt="AutoSpam Editor tab"></p>
+
+## The Settings Tab
+
+- **Post every** sets the time between posts, from 1 to 10 minutes in 30 second steps.
+- **Dry run** prints posts to your own chat instead of sending them.
+- **Debug messages** prints extra detail to chat if you're tracking down a problem.
+
+<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Settings.png?raw=true" alt="AutoSpam Settings tab"></p>
+
+## The Help Tab
+
+Everything in this README, in short form, right in the game.
+
+<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Help.png?raw=true" alt="AutoSpam Help tab"></p>
 
 ## How Weight Works
 
-Weight determines how often a message posts compared to others:
+Say you have three messages enabled:
 
-**Example:**
-- Message A: Weight 1 (enabled)
-- Message B: Weight 5 (enabled)
-- Message C: Weight 2 (enabled)
+- Message A, weight 1
+- Message B, weight 5
+- Message C, weight 2
 
-Message B will post ~5 times as often as Message A, and ~2.5 times as often as Message C.
+B posts about five times as often as A and about two and a half times as often as C. Messages with no text are skipped.
 
-**Behind the scenes:** AutoSpam creates a weighted pool where each message appears N times based on its weight, then randomly selects from that pool.
+## Channels
 
-## Channel Options
+- **Say, Yell, Guild, Officer, Party, Raid** go where you'd expect.
+- **World** looks for a channel named World, LookingForGroup, or LFG.
+- **Custom Channel** posts to any channel you've joined, by name or number.
 
-- **Say** - Local say chat
-- **Yell** - Yell (larger radius than say)
-- **Guild** - Guild chat
-- **Officer** - Officer chat only
-- **Party** - Party chat
-- **Raid** - Raid chat
-- **World** - World channel (searches for World, LookingForGroup, LFG)
-- **Custom Channel** - Enter any channel name (e.g., "Trade", "General")
+When a message has more than one channel checked, it goes to the first one right away and each of the others one second apart, so it doesn't hit the server as a burst.
 
-## Timer Behavior
+## Placeholders
 
-The timer in AutoSpam has smart behavior:
+Type these into a message and AutoSpam fills them in at the moment it posts:
 
-1. Timer **starts** when you click "Start Posting"
-2. Timer **counts down continuously** once started
-3. Timer **does NOT stop** when you click "Stop Posting"
-4. Timer **only stops** when it hits 0 while posting is disabled
-5. Click "Start Posting" again to resume posting at current timer position
+- `{GROUP}` is how many people are in your group, like `23`
+- `{ZONE}` is the zone you're in, like `Orgrimmar`
+- `{TIME}` is server time, like `8:05 PM`
+- `{NAME}` is your character's name
+- `{GUILD}` is your guild's name
 
-**Why?** This prevents spam and allows you to pause/resume without resetting your interval.
+So `LFM Molten Core {GROUP}/40, need heals` posts as `LFM Molten Core 23/40, need heals`, and the number keeps up as your raid fills. Hover the line under the message box in the Editor to see every placeholder and what it would fill in right now.
 
-## Message Management Features
+The 255 character limit applies after placeholders are filled in. If a message runs over, it's skipped and you'll get a note in chat.
 
-### Editing Messages
-- Click **Edit** to open a dedicated edit window
-- Change message text, channel, and weight
-- Click **Save** to save changes (window stays open)
-- Click **X** to close
+## Timer
 
-### Renaming Messages
-1. Click **Edit** on a message
-2. Click **Rename** button next to the title
-3. Type new name and press Enter or click **Save**
-4. Press Escape to cancel
+Set the interval on the **Settings** tab, anywhere from 1 to 10 minutes. The countdown in the header shows when the next post goes out.
 
-### Reordering Messages
-- Use **Up/Down arrows** to change message order in the list
-- Order doesn't affect posting frequency (weight does)
-- Organize for your convenience
+1. **Start** begins posting. If the timer was idle, the first post goes out immediately.
+2. **Stop** pauses posting but the timer keeps counting down.
+3. If the timer runs out while you're stopped, it goes idle. The next **Start** posts right away.
+4. **Post now** sends a message immediately and restarts the timer.
 
-### Deleting Messages
-- Click **Remove** to permanently delete a message
-- No confirmation prompt - be sure before clicking!
+## Auto-Invite
 
-## Keyboard Shortcuts
+Auto-invite is set up on each message in the Editor.
 
-- **Escape** - Close any AutoSpam window
-- **Enter** - Save changes when renaming a message
-- **Ctrl+C** - Copy (use in text fields)
-- **Ctrl+A** - Select all (use in text fields)
+- **Auto-invite on whisper** turns it on for that message.
+- **Keywords** is a comma separated list, like `inv, +1, mc`. The whole whisper has to match a keyword, so "inv" works but "can you inv me" doesn't.
+- **Convert to raid** turns your party into a raid when it's full so invites keep going out.
 
-## Help Window
+Invites only happen while posting is running and the message is checked in the Messages list. You need to be the group leader (or a raid assistant) for invites to work, and the same player won't be invited twice within 10 seconds.
 
-Click the **Help** button (next to X) in the main window for comprehensive built-in documentation including:
-- Getting Started guide
-- Message Settings details
-- Weight System explanation
-- Timer & Posting behavior
-- Managing Messages tips
-- Best Practices
-- GitHub link for support
+## Item Links
 
-## Configuration
+Click into the message text, then shift-click an item in your bags, an item on your character, or a link in chat. The link goes in at your cursor. Links count toward the 255 character limit.
 
-All settings are saved per character in:
+## Slash Commands
+
+- `/autospam` or `/aspam` opens the window
+- `/autospam start` starts posting
+- `/autospam stop` stops posting
+- `/autospam now` posts right away
+- `/autospam dryrun` toggles dry run
+
+## Saved Data
+
+Messages and settings are saved for your whole account in:
+
 ```
-WTF\Account\[AccountName]\[ServerName]\[CharacterName]\SavedVariables\AutoSpam.lua
+WTF\Account\[AccountName]\SavedVariables\AutoSpam.lua
 ```
 
-## Best Practices
+Messages from older versions of AutoSpam carry over automatically.
 
-1. **Test First** - Create test messages with short intervals before going live
-2. **Use Weights Strategically** - Higher weights for important messages, lower for promotional content
-3. **Vary Your Messages** - Create multiple versions to avoid spam appearance
-4. **Watch the Timer** - Check countdown before logging out
-5. **Appropriate Channels** - Use Trade for selling, World/Guild for recruitment, etc.
-6. **Character Limit** - Keep messages under 255 characters (turns red if over)
+## Tips
 
-*Happy posting!*
+1. **Test with dry run first** so you can see your rotation without spamming anyone.
+2. **Write a few versions** of the same message and enable them all. It reads a lot less like spam.
+3. **Use the right channel.** Trade for selling, World or Guild for recruiting, LFG for groups.
+4. **Forgot to stop before logging out?** No problem. When you log back in nothing posts. A popup counts down 2 minutes with **Stop posting** and **Post now** buttons, and if you don't click either one, AutoSpam turns itself off.
+
+## Bugs and Feature Requests
+
+Open an issue on GitHub and I'll take a look: https://github.com/TheRealFayz/AutoSpam
+
+Happy posting!

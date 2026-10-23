@@ -1,8 +1,8 @@
-## Interface: 30300
+## Interface: 11200
 ## Title: AutoSpam
-## Notes: Automatically post weighted messages to multiple channels with customizable intervals
+## Notes: Automatically post weighted messages to chat channels on a timer
 ## Author: Fayz
-## Version: 2.0
 ## SavedVariables: AutoSpamDB
 
 AutoSpam.lua
+AutoSpamUI.lua
