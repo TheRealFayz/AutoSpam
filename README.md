@@ -2,7 +2,7 @@
 
 AutoSpam posts your messages to chat on a timer so you don't have to. Set up your guild recruitment, raid LFM, or trade posts once, pick how often each one should go out, and let it run. Built for World of Warcraft 1.12 and Turtle WoW.
 
-You can also download BigTimer from OctoWoW's [Gitea](https://octowow.st/git/Fayz/AutoSpam).
+You can also download AutoSpam from OctoWoW's [Gitea](https://octowow.st/git/Fayz/AutoSpam).
 
 ## Features
 
@@ -10,7 +10,7 @@ You can also download BigTimer from OctoWoW's [Gitea](https://octowow.st/git/Fay
 - **Weighted rotation.** Give each message a weight from 1 to 10. Higher weight means it comes up more often.
 - **See what's next.** The header shows which message posts next, how long you've been running, how many posts went out, and a countdown to the next one.
 - **Any channels you want.** Check as many as you like per message: Say, Yell, Guild, Officer, Party, Raid, World, or a custom channel you've joined.
-- **Placeholders.** Put `{GROUP}`, `{ZONE}`, `{TIME}`, `{NAME}` or `{GUILD}` in a message and it's filled in every time it posts.
+- **Placeholders.** Put `{GROUP}`, `{ZONE}`, `{TIME}`, `{NAME}` or `{GUILD}` in a message and it's filled in every time it posts. `{UTC Sunday 1300}` turns your local time into UTC so everyone can read it in their own time zone.
 - **Auto-invite per message.** Turn it on for your raid LFM and leave it off for guild recruiting. Each message has its own keywords and its own convert to raid option.
 - **Item links.** Shift-click items in your bags, on your character, or links in chat to drop them into a message.
 - **Safe logins.** If you logged out with posting still on, nothing posts when you log back in. A popup gives you 2 minutes to choose Post now, otherwise AutoSpam turns itself off.
@@ -28,7 +28,7 @@ You can also download BigTimer from OctoWoW's [Gitea](https://octowow.st/git/Fay
 
 ## Quick Start
 
-1. Click the **AS** minimap button or type `/autospam`. You can move the minimap button by right-click dragging it.
+1. Click the hourglass minimap button or type `/autospam`. You can move the minimap button by right-click dragging it.
 2. On the **Messages** tab, type a name and click **Add**.
 3. The **Editor** opens. Write your message, check one or more channels, set a weight, and click **Save**.
 4. Back on **Messages**, check the box next to your message to enable it.
@@ -48,7 +48,7 @@ Each message shows its channels, name, weight (if above 1), `(inv)` if auto-invi
 ## The Editor
 
 - **Name** can be changed here. Names have to be unique.
-- **Message text** holds up to 255 characters, which is the most WoW will send in one chat message. Line breaks are turned into spaces since chat can't send them.
+- **Message text** holds up to 511 characters. Line breaks are turned into spaces since chat can't send them.
 - **Channel** opens a list where you check every channel the message should go to. Click a channel again to uncheck it. Check Custom Channel to type a channel name.
 - **Weight** sets how often it comes up compared to your other messages.
 - **Auto-invite on whisper** turns on invites for this message. See below.
@@ -100,7 +100,24 @@ Type these into a message and AutoSpam fills them in at the moment it posts:
 
 So `LFM Molten Core {GROUP}/40, need heals` posts as `LFM Molten Core 23/40, need heals`, and the number keeps up as your raid fills. Hover the line under the message box in the Editor to see every placeholder and what it would fill in right now.
 
-The 255 character limit applies after placeholders are filled in. If a message runs over, it's skipped and you'll get a note in chat.
+### UTC time
+
+Type a day and time in your own local time and AutoSpam posts it in UTC, which is the same everywhere, so every reader can convert it to their own clock:
+
+- `{UTC Sunday 1300}` posts as `Sunday 1800 UTC` if you're on US Central daylight time
+- `{UTC Sat 7:30 PM}`, `{UTC 8pm}` and `{UTC 19:45}` work too. The day is optional
+- The time comes back in the same style you typed it, and the day moves if the conversion crosses midnight
+
+The time you type is always your own local time. The `UTC` in the braces just says what to convert it to.
+
+Your saved message never changes. The conversion happens fresh every time the message posts:
+
+- It always points at the next time that day and time comes around. Once Sunday 1300 has passed, posts point to the following Sunday.
+- It works out the actual date of that next Sunday, so daylight saving is handled. If your clocks change before then, the UTC time changes to match. For example, on US Central time, `{UTC Sun 1300}` posts as `Sun 1800 UTC` up until 1:00 PM on the last Sunday before clocks fall back. From then on it posts `Sun 1900 UTC`, because the next Sunday is on standard time. Both are correct for the raid they point to.
+
+Keep your PC's clock and time zone set correctly, since that's what AutoSpam reads. If AutoSpam can't read what you typed, it's posted exactly as written.
+
+The 511 character limit applies after placeholders are filled in. If a message runs over, it's skipped and you'll get a note in chat.
 
 ## Timer
 
@@ -123,7 +140,7 @@ Invites only happen while posting is running and the message is checked in the M
 
 ## Item Links
 
-Click into the message text, then shift-click an item in your bags, an item on your character, or a link in chat. The link goes in at your cursor. Links count toward the 255 character limit.
+Click into the message text, then shift-click an item in your bags, an item on your character, or a link in chat. The link goes in at your cursor. Links count toward the 511 character limit.
 
 ## Slash Commands
 
@@ -132,6 +149,7 @@ Click into the message text, then shift-click an item in your bags, an item on y
 - `/autospam stop` stops posting
 - `/autospam now` posts right away
 - `/autospam dryrun` toggles dry run
+- `/autospam time` shows your PC time and UTC, if a converted time looks wrong
 
 ## Saved Data
 

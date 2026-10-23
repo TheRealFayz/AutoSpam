@@ -17,6 +17,7 @@ AutoSpam.CHANNELS = {
 local WORLD_CHANNELS = { "World", "world", "LookingForGroup", "LFG" }
 local INVITE_COOLDOWN = 10   -- seconds before the same player can trigger another invite
 local DEFAULT_KEYWORDS = "inv, invite, +1"
+AutoSpam.MAX_LEN = 511       -- longest message the editor and sender allow
 local CHANNEL_GAP = 1         -- seconds between channels when a message posts to several
 local RESUME_DELAY = 120     -- seconds before posting turns itself off after logging in while still running
 
@@ -283,8 +284,141 @@ function AutoSpam:PlaceholderValue(key)
     return nil
 end
 
+-- {UTC Sunday 1300}: your local day/time converted to UTC
+local DAYS = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" }
+
+-- Day word in the same style it was typed: Sun, Sunday or Sundays, matching upper case
+local function DayLike(word, typedIndex, newIndex)
+    local typedFull = string.lower(DAYS[typedIndex])
+    local full = DAYS[newIndex]
+    local lw = string.lower(word)
+    local out
+    if lw == typedFull then
+        out = full
+    elseif lw == typedFull .. "s" then
+        out = full .. "s"
+    else
+        out = string.sub(full, 1, 3)
+    end
+    if word == string.upper(word) then out = string.upper(out) end
+    return out
+end
+
+-- Reads "Sunday 1300", "Sun 1:00 PM", "1pm" or "13:00".
+-- Returns a table describing it, or nil if it can't be read.
+local function ParseDayTime(spec)
+    local s = Trim(spec)
+    local p = {}
+    local _, _, w, rest = string.find(s, "^(%a+)%s+(.+)$")
+    if w and string.find(rest, "^%d") then
+        local key = string.lower(string.sub(w, 1, 3))
+        for i = 1, 7 do
+            if string.lower(string.sub(DAYS[i], 1, 3)) == key then p.dayIndex = i end
+        end
+        if not p.dayIndex then return nil end
+        p.dayWord = w
+        s = rest
+    end
+
+    local h, m, a, b, c
+    _, _, a, b, c = string.find(s, "^(%d%d?):(%d%d)%s*([AaPp]%.?[Mm]%.?)$")
+    if a then
+        h, m, p.ampm, p.colon = a, b, c, true
+    else
+        _, _, a, b = string.find(s, "^(%d%d?):(%d%d)$")
+        if a then
+            h, m, p.colon = a, b, true
+        else
+            _, _, a, c = string.find(s, "^(%d%d?)%s*([AaPp]%.?[Mm]%.?)$")
+            if a then
+                h, p.ampm = a, c
+            else
+                _, _, a, b = string.find(s, "^(%d?%d)(%d%d)$")
+                if not a then return nil end
+                h, m = a, b
+            end
+        end
+    end
+    p.hadMinutes = m and true or false
+    p.spaceBeforeAmpm = string.find(s, "%s[AaPp]") and true or false
+
+    h = tonumber(h)
+    local mins = 0
+    if m then mins = tonumber(m) end
+    if mins > 59 then return nil end
+    if p.ampm then
+        if h < 1 or h > 12 then return nil end
+        if h == 12 then h = 0 end
+        if string.find(string.lower(p.ampm), "^p") then h = h + 12 end
+    elseif h > 23 then
+        return nil
+    end
+    p.hour, p.min = h, mins
+    return p
+end
+
+-- Writes a time back in the style it was typed
+local function FormatLike(p, day, h, mins)
+    local out
+    if p.ampm then
+        local suffix = "AM"
+        if h >= 12 then suffix = "PM" end
+        if string.find(p.ampm, "%l") then suffix = string.lower(suffix) end
+        local h12 = math.mod(h, 12)
+        if h12 == 0 then h12 = 12 end
+        if p.hadMinutes or mins ~= 0 then
+            out = string.format("%d:%02d", h12, mins)
+        else
+            out = tostring(h12)
+        end
+        if p.spaceBeforeAmpm then out = out .. " " end
+        out = out .. suffix
+    elseif p.colon then
+        out = string.format("%02d:%02d", h, mins)
+    else
+        out = string.format("%02d%02d", h, mins)
+    end
+    if p.dayWord then out = DayLike(p.dayWord, p.dayIndex, day) .. " " .. out end
+    return out
+end
+
+-- Turns your local day and time into UTC. Works out the actual date it falls on
+-- (the next one, if you gave a day), so a daylight saving change in between is
+-- handled. Returns nil if the text can't be read or the client has no clock.
+function AutoSpam:ConvertToUTC(spec)
+    if not date or not time then return nil end
+    local p = ParseDayTime(spec)
+    if not p then return nil end
+
+    local now = time()
+    local lt = date("*t", now)
+    if not lt or not lt.wday then return nil end
+    local ahead = 0
+    if p.dayIndex then
+        ahead = math.mod(p.dayIndex - lt.wday + 7, 7)
+        if ahead == 0 and p.hour * 60 + p.min < lt.hour * 60 + lt.min then ahead = 7 end
+    end
+
+    local t = time({ year = lt.year, month = lt.month, day = lt.day + ahead, hour = p.hour, min = p.min, sec = 0 })
+    if not t then return nil end
+    -- Check that moment really reads as the typed time on this PC; Lua 5.0 assumes
+    -- standard time, so during daylight saving it lands an hour off without this
+    local chk = date("*t", t)
+    local diff = (p.hour * 60 + p.min) - (chk.hour * 60 + chk.min)
+    if diff > 720 then diff = diff - 1440 end
+    if diff < -720 then diff = diff + 1440 end
+    t = t + diff * 60
+
+    local u = date("!*t", t)
+    if not u or not u.wday then return nil end
+    return FormatLike(p, u.wday, u.hour, u.min) .. " UTC"
+end
+
 function AutoSpam:ExpandText(text)
-    local out = string.gsub(text or "", "{(%a+)}", function(word)
+    local out = string.gsub(text or "", "({[Uu][Tt][Cc]%s+([^{}]-)})", function(whole, spec)
+        return AutoSpam:ConvertToUTC(spec) or whole   -- unreadable: leave it as typed
+    end)
+    out = string.gsub(out, "{(%a+)}", function(word)
         local v = AutoSpam:PlaceholderValue(string.upper(word))
         if v then return v end
         return "{" .. word .. "}"   -- not a placeholder, leave it alone
@@ -328,8 +462,8 @@ end
 
 function AutoSpam:SendText(m)
     local text = self:ExpandText(m.text)
-    if string.len(text) > 255 then
-        Print("'" .. m.name .. "' runs over 255 characters once placeholders are filled in, so it was skipped. Shorten it a little.", 1, 0.3, 0.3)
+    if string.len(text) > self.MAX_LEN then
+        Print("'" .. m.name .. "' runs over " .. self.MAX_LEN .. " characters once placeholders are filled in, so it was skipped. Shorten it a little.", 1, 0.3, 0.3)
         return false
     end
     local list = self:CheckedChannels(m.channels)
@@ -546,8 +680,8 @@ function AutoSpam:InsertLink(link)
     if not link or not self.linkFocus or not self.linkTarget then return false end
     if not self.linkTarget:IsVisible() then return false end
     local cur = self.linkTarget:GetText() or ""
-    if string.len(cur) + string.len(link) > 255 then
-        Print("Not enough room for that link (255 character limit).", 1, 0.3, 0.3)
+    if string.len(cur) + string.len(link) > self.MAX_LEN then
+        Print("Not enough room for that link (" .. self.MAX_LEN .. " character limit).", 1, 0.3, 0.3)
         return true
     end
     self.linkTarget:Insert(link)
@@ -653,8 +787,19 @@ SlashCmdList["AUTOSPAM"] = function(msg)
         AutoSpam:PostNow()
     elseif cmd == "dryrun" then
         AutoSpam:SetDryRun(not AutoSpam.db.dryRun)
+    elseif cmd == "time" then
+        -- Shows the clock behind {UTC ...} so a wrong conversion can be tracked down
+        local pc, utc = "unavailable", "unavailable"
+        if date then
+            local t = date("*t")
+            if t and t.hour then pc = string.format("%02d:%02d", t.hour, t.min) end
+            local u = date("!*t")
+            if u and u.hour then utc = string.format("%02d:%02d", u.hour, u.min) end
+        end
+        Print("Your PC: " .. pc .. "   UTC: " .. utc)
+        Print("Sun 1300 your time = " .. (AutoSpam:ConvertToUTC("Sun 1300") or "?"))
     elseif cmd == "help" then
-        Print("/autospam: open the window. Options: start, stop, now, dryrun.")
+        Print("/autospam: open the window. Options: start, stop, now, dryrun, time.")
     else
         if AutoSpam.ToggleWindow then AutoSpam:ToggleWindow() end
     end

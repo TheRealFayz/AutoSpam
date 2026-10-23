@@ -4,7 +4,7 @@
 local Print = AutoSpam.Print
 local Trim = AutoSpam.Trim
 
-local W, H = 360, 510
+local W, H = 360, 600
 local ROW_H, ROW_GAP = 36, 2
 local TEX = "Interface\\AddOns\\AutoSpam\\Textures\\"
 local PORTRAIT_FRAMES, PORTRAIT_GRID, PORTRAIT_STEP = 16, 4, 0.18
@@ -341,18 +341,13 @@ function AutoSpam:CreateMinimapButton()
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:EnableMouse(true)
 
-    local background = button:CreateTexture(nil, "BACKGROUND")
-    background:SetWidth(26)
-    background:SetHeight(26)
-    background:SetPoint("CENTER", 0, 1)
-    background:SetTexture("Interface\\Buttons\\WHITE8X8")
-    background:SetVertexColor(0.1, 0.1, 0.1, 1)
-
-    local text = button:CreateFontString(nil, "ARTWORK")
-    text:SetPoint("CENTER", 0, 1)
-    text:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    text:SetText("AS")
-    text:SetTextColor(1, 0.82, 0)
+    -- Same hourglass as the window portrait, animated while posting
+    local icon = button:CreateTexture(nil, "BACKGROUND")
+    icon:SetWidth(21)
+    icon:SetHeight(21)
+    icon:SetPoint("TOPLEFT", button, "TOPLEFT", 6, -5)
+    icon:SetTexture(TEX .. "Hourglass")
+    self.minimapIcon = icon
 
     local overlay = button:CreateTexture(nil, "OVERLAY")
     overlay:SetWidth(53)
@@ -637,7 +632,14 @@ function AutoSpam:SetPortraitFrame(n)
     local col = math.mod(n, PORTRAIT_GRID)
     local row = math.floor(n / PORTRAIT_GRID)
     local s = 1 / PORTRAIT_GRID
-    self.portrait:SetTexCoord(col * s, (col + 1) * s, row * s, (row + 1) * s)
+    if self.portrait then
+        self.portrait:SetTexCoord(col * s, (col + 1) * s, row * s, (row + 1) * s)
+    end
+    if self.minimapIcon then
+        -- Trim the art's own gold rim so it sits inside the minimap border
+        local trim = s * 0.07
+        self.minimapIcon:SetTexCoord(col * s + trim, (col + 1) * s - trim, row * s + trim, (row + 1) * s - trim)
+    end
 end
 
 function AutoSpam:UpdatePortrait()
@@ -868,14 +870,14 @@ function AutoSpam:BuildEditorPanel(p)
     -- Message text
     local tl = Label(c, "Message text:", "GameFontNormal")
     tl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -42)
-    local count = Label(c, "0 / 255", "GameFontNormalSmall")
+    local count = Label(c, "0 / " .. AutoSpam.MAX_LEN, "GameFontNormalSmall")
     count:SetPoint("TOPRIGHT", c, "TOPRIGHT", -12, -44)
     self.edCount = count
 
     local box = CreateFrame("Frame", nil, c)
     box:SetPoint("TOPLEFT", c, "TOPLEFT", 10, -58)
     box:SetWidth(312)
-    box:SetHeight(86)
+    box:SetHeight(176)
     box:SetBackdrop(BOX_BACKDROP)
     box:SetBackdropColor(0, 0, 0, 0.6)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4)
@@ -888,10 +890,10 @@ function AutoSpam:BuildEditorPanel(p)
 
     local textBox = CreateFrame("EditBox", "AutoSpamEditText", clip)
     textBox:SetWidth(296)
-    textBox:SetHeight(70)
+    textBox:SetHeight(160)
     textBox:SetMultiLine(true)
     textBox:SetAutoFocus(false)
-    textBox:SetMaxLetters(255)
+    textBox:SetMaxLetters(AutoSpam.MAX_LEN)
     textBox:SetFontObject(GameFontHighlight)
     textBox:EnableMouse(true)
     textBox:EnableKeyboard(true)
@@ -941,13 +943,16 @@ function AutoSpam:BuildEditorPanel(p)
             if now == "" then now = "(none)" end
             GameTooltip:AddDoubleLine("{" .. list[i].key .. "}", list[i].desc .. ": |cffffffff" .. now .. "|r", 1, 0.82, 0, 0.8, 0.8, 0.8)
         end
+        GameTooltip:AddLine(" ")
+        local example = AutoSpam:ConvertToUTC("Sunday 1300") or "(no PC clock)"
+        GameTooltip:AddDoubleLine("{UTC Sunday 1300}", "Your time to UTC: |cffffffff" .. example .. "|r", 1, 0.82, 0, 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     tipHover:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Channel
     local cl = Label(c, "Channel:", "GameFontNormal")
-    cl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -170)
+    cl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -260)
 
     local dd = CreateFrame("Frame", "AutoSpamChannelDropDown", c, "UIDropDownMenuTemplate")
     dd:SetPoint("LEFT", cl, "RIGHT", -8, -3)
@@ -955,7 +960,7 @@ function AutoSpam:BuildEditorPanel(p)
     self:BuildChannelList(c, dd)
 
     local ccl = Label(c, "Channel name:", "GameFontNormalSmall")
-    ccl:SetPoint("TOPLEFT", c, "TOPLEFT", 24, -200)
+    ccl:SetPoint("TOPLEFT", c, "TOPLEFT", 24, -290)
     self.edCustomLabel = ccl
     local custom = InputBox("AutoSpamEditCustom", c, 150, 50)
     custom:SetPoint("LEFT", ccl, "RIGHT", 12, 0)
@@ -969,10 +974,10 @@ function AutoSpam:BuildEditorPanel(p)
 
     -- Weight
     local wl = Label(c, "Weight: x1", "GameFontNormal")
-    wl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -222)
+    wl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -312)
     self.edWeightLabel = wl
     local ws = Slider("AutoSpamEditWeight", c, 290, 1, 10, 1, "1", "10")
-    ws:SetPoint("TOPLEFT", c, "TOPLEFT", 16, -240)
+    ws:SetPoint("TOPLEFT", c, "TOPLEFT", 16, -330)
     ws:SetScript("OnValueChanged", function()
         local v = math.floor(this:GetValue() + 0.5)
         AutoSpam.edWeightLabel:SetText("Weight: x" .. v)
@@ -985,7 +990,7 @@ function AutoSpam:BuildEditorPanel(p)
 
     -- Auto-invite, all settings belong to this message
     local inv = CheckBox(c, "Auto-invite on whisper", 22)
-    inv:SetPoint("TOPLEFT", c, "TOPLEFT", 10, -272)
+    inv:SetPoint("TOPLEFT", c, "TOPLEFT", 10, -362)
     inv:SetScript("OnClick", function()
         if AutoSpam.draft then
             AutoSpam.draft.autoInvite = this:GetChecked() and true or false
@@ -996,7 +1001,7 @@ function AutoSpam:BuildEditorPanel(p)
     self.edInvite = inv
 
     local conv = CheckBox(c, "Convert to raid", 22)
-    conv:SetPoint("TOPLEFT", c, "TOPLEFT", 190, -272)
+    conv:SetPoint("TOPLEFT", c, "TOPLEFT", 190, -362)
     conv:SetScript("OnClick", function()
         if AutoSpam.draft then
             AutoSpam.draft.inviteConvert = this:GetChecked() and true or false
@@ -1013,7 +1018,7 @@ function AutoSpam:BuildEditorPanel(p)
     self.edConvert = conv
 
     local kl = Label(c, "Keywords:", "GameFontNormalSmall")
-    kl:SetPoint("TOPLEFT", c, "TOPLEFT", 36, -302)
+    kl:SetPoint("TOPLEFT", c, "TOPLEFT", 36, -392)
     self.edKeywordsLabel = kl
     local kw = InputBox("AutoSpamEditKeywords", c, 200, 120)
     kw:SetPoint("LEFT", kl, "RIGHT", 12, 0)
@@ -1033,7 +1038,7 @@ function AutoSpam:BuildEditorPanel(p)
     self.edKeywords = kw
 
     local invNote = Label(c, "Auto-invite settings are per message.", "GameFontDisableSmall")
-    invNote:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -326)
+    invNote:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -416)
 
     local save = Button(c, "Save", 90, 22)
     save:SetPoint("BOTTOM", c, "BOTTOM", -50, 10)
@@ -1265,8 +1270,8 @@ end
 function AutoSpam:EditorChanged()
     if not self.draft or not self.edCount then return end
     local len = string.len(self.draft.text or "")
-    self.edCount:SetText(len .. " / 255")
-    if len >= 240 then
+    self.edCount:SetText(len .. " / " .. self.MAX_LEN)
+    if len >= self.MAX_LEN - 15 then
         self.edCount:SetTextColor(1, 0.5, 0)
     else
         self.edCount:SetTextColor(0, 1, 0)
@@ -1344,7 +1349,6 @@ function AutoSpam:BuildSettingsPanel(p)
     end)
     self.setDry = dry
 
-
     local dbg = CheckBox(p, "Debug messages", 22)
     dbg:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 10, 10)
     dbg:SetScript("OnClick", function()
@@ -1386,6 +1390,9 @@ local HELP_TEXT =
     "Open the channel list and check as many channels as you like. Click again to uncheck. Each post goes to every checked channel, one second apart.\n\n" ..
     "|cffffd100Placeholders|r\n" ..
     "Type {GROUP}, {ZONE}, {TIME}, {NAME} or {GUILD} into a message and it's filled in each time it posts. For example \"LFM MC {GROUP}/40\" posts as \"LFM MC 23/40\". Hover the line under the message box to see them all.\n\n" ..
+    "|cffffd100UTC time|r\n" ..
+    "Type {UTC Sunday 1300} using your own local time and it posts in UTC, like \"Sunday 1800 UTC\", so everyone can convert it to their own clock. The day is optional, and 1:00 PM style works too.\n" ..
+    "It's worked out fresh each time the message posts, for the next time that day and time comes around. Once it passes, posts point to the following week, and if your clocks change before then the UTC time changes to match.\n\n" ..
     "|cffffd100Item links|r\n" ..
     "Click into the message text, then shift-click an item in your bags, on your character, or a link in chat.\n\n" ..
     "|cffffd100Auto-invite|r\n" ..
@@ -1460,10 +1467,11 @@ function AutoSpam:RefreshUI()
 end
 
 function AutoSpam:OnTick(elapsed)
-    if not self.frame or not self.frame:IsVisible() then return end
+    if not self.frame then return end
     elapsed = elapsed or 0
 
-    if self.db.enabled then
+    -- Animate even with the window closed, since the minimap icon shows it too
+    if self.db.enabled and not self.resumeHold then
         self.portraitTimer = self.portraitTimer + elapsed
         if self.portraitTimer >= PORTRAIT_STEP then
             self.portraitTimer = 0
@@ -1472,6 +1480,7 @@ function AutoSpam:OnTick(elapsed)
         end
     end
 
+    if not self.frame:IsVisible() then return end
     self.statTimer = (self.statTimer or 0) + elapsed
     if self.statTimer >= 0.25 then
         self.statTimer = 0
