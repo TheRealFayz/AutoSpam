@@ -1520,6 +1520,12 @@ function AutoSpam:EditorSave()
     m.inviteKeywords = Trim(d.inviteKeywords)
     m.inviteConvert = d.inviteConvert and true or false
 
+    -- Drop the cursor so typing after Save can't change the message by accident
+    self.edName:ClearFocus()
+    self.edText:ClearFocus()
+    self.edCustom:ClearFocus()
+    self.edKeywords:ClearFocus()
+
     self:EditorLoad(m)
     self:ValidateNext()
     Print("Saved '" .. name .. "'.", 0, 1, 0)
