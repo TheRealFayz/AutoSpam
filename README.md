@@ -166,7 +166,11 @@ Open a message in the Editor and click **Share**.
 - **Send to player** sends it to one player. Type their name first. They don't have to be in your guild.
 - **Send to guild** offers it to everyone in your guild who is online and has AutoSpam. This button only works when you're in a guild.
 
+<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Share.png?raw=true" alt="AutoSpam Share window"></p>
+
 Each person gets a popup showing who sent it, the message name, its channels and a preview of the text, with **Accept** and **Decline**. If they don't answer within a minute, it closes on its own. You'll see each answer in your chat.
+
+<p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Receive.png?raw=true" alt="AutoSpam share popup"></p>
 
 A few things to know:
 
