@@ -14,7 +14,8 @@ You can also download AutoSpam from OctoWoW's [Gitea](https://octowow.st/git/Fay
 - **Auto-invite per message.** Turn it on for your raid LFM and leave it off for guild recruiting. Each message has its own keywords and its own convert to raid option.
 - **Item links.** Shift-click items in your bags, on your character, or links in chat to drop them into a message.
 - **Safe logins.** If you logged out with posting still on, nothing posts when you log back in. A popup gives you 2 minutes to choose Post now, otherwise AutoSpam turns itself off.
-- **AFK friendly.** If you're flagged AFK when a post is due, AutoSpam clears the flag first so the message actually goes out.
+- **AFK friendly.** Posts keep going out while you're AFK. While posting is on, AutoSpam also stops the game from logging you out after 30 minutes idle. Logging out yourself with /logout, /camp or the game menu still works like normal.
+- **Post check.** The server echoes every channel post back to you. If a post doesn't show up within a few seconds, AutoSpam sends it once more, and tells you in chat if it still didn't make it.
 - **Dry run.** Prints what would be posted to your own chat window and sends nothing. Each dry run post pops up a reminder that counts down to the next one and has a button to go live, so you can't forget it's on.
 - **Explicit save.** Edits only stick when you click Save. If you try to leave with unsaved changes, it asks first.
 - **Resizable.** Drag the grip in the bottom right corner to make the window bigger or smaller. Right-click it to reset.

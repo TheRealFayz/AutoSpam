@@ -138,6 +138,7 @@ function AutoSpam:Initialize()
     self.recentInvites = {}
     self.inviteQueue = {}
     self.sendQueue = {}
+    self.echoWatch = {}
 end
 
 ---------------------------------------------------------------------------
@@ -441,6 +442,7 @@ function AutoSpam:SendToChannel(item)
         local lookup = tonumber(name) or name
         local id = GetChannelName(lookup)
         if id and id > 0 then
+            self:WatchEcho(item, name)   -- before sending, in case the echo is instant
             SendChatMessage(text, "CHANNEL", nil, id)
             return true
         end
@@ -450,6 +452,7 @@ function AutoSpam:SendToChannel(item)
         for i = 1, table.getn(WORLD_CHANNELS) do
             local id = GetChannelName(WORLD_CHANNELS[i])
             if id and id > 0 then
+                self:WatchEcho(item, WORLD_CHANNELS[i])
                 SendChatMessage(text, "CHANNEL", nil, id)
                 return true
             end
@@ -458,6 +461,72 @@ function AutoSpam:SendToChannel(item)
         return false
     end
     return false
+end
+
+---------------------------------------------------------------------------
+-- Post check: the server echoes every channel message back to the sender.
+-- If ours doesn't come back within a few seconds, the server dropped it
+-- (spam filter, mute, channel rule), so say so instead of failing silently.
+---------------------------------------------------------------------------
+
+local ECHO_WAIT = 6
+
+local function Squash(t)
+    t = string.gsub(t or "", "%s+", " ")
+    return string.lower(Trim(t))
+end
+
+function AutoSpam:WatchEcho(item, chanName)
+    table.insert(self.echoWatch, {
+        key = Squash(item.text), name = item.name, chan = chanName, item = item,
+        deadline = GetTime() + ECHO_WAIT,
+    })
+end
+
+function AutoSpam:OnChannelEcho(text, author)
+    if author ~= UnitName("player") or table.getn(self.echoWatch) == 0 then return end
+    local key = Squash(text)
+    for i = 1, table.getn(self.echoWatch) do
+        local w = self.echoWatch[i]
+        -- Exact match, or the server trimmed or reworded the end slightly
+        if w.key == key or string.sub(w.key, 1, 40) == string.sub(key, 1, 40) then
+            table.remove(self.echoWatch, i)
+            if self.db.debugMode then
+                Print("'" .. w.name .. "' showed up in " .. w.chan .. ".", 0, 1, 1)
+            end
+            return
+        end
+    end
+end
+
+function AutoSpam:OnSystemDuringWatch(text)
+    if table.getn(self.echoWatch) > 0 and text and text ~= "" then
+        self.echoSystemMsg = text
+    end
+end
+
+function AutoSpam:CheckEchoes(now)
+    local i = 1
+    while self.echoWatch[i] do
+        local w = self.echoWatch[i]
+        if now >= w.deadline then
+            table.remove(self.echoWatch, i)
+            if not w.item.retried and self.db.enabled then
+                -- Dropped once: send it one more time
+                w.item.retried = true
+                Print("'" .. w.name .. "' didn't show up in " .. w.chan .. ". Sending it once more.", 1, 0.82, 0)
+                self:SendToChannel(w.item)
+            else
+                Print("'" .. w.name .. "' was sent twice but never showed up in " .. w.chan .. ". The server probably blocked it.", 1, 0.3, 0.3)
+                if self.echoSystemMsg then
+                    Print("Server said: " .. self.echoSystemMsg, 1, 0.3, 0.3)
+                end
+            end
+        else
+            i = i + 1
+        end
+    end
+    if table.getn(self.echoWatch) == 0 then self.echoSystemMsg = nil end
 end
 
 function AutoSpam:SendText(m)
@@ -529,6 +598,11 @@ function AutoSpam:PostNext()
 end
 
 function AutoSpam:EndResumeHold()
+    if self.resumeHold then
+        -- Posting picks up again from the login popup: start the Running clock now
+        self.sessionStart = GetTime()
+        self.sentCount = 0
+    end
     self.resumeHold = false
 end
 
@@ -741,17 +815,10 @@ tickFrame:SetScript("OnUpdate", function()
     if AutoSpam.timerStarted and now - AutoSpam.lastPostTime >= AutoSpam.db.interval then
         if AutoSpam.db.enabled then
             AutoSpam.lastPostTime = now
-            if AutoSpam.db.dryRun then
-                AutoSpam:PostNext()
-            else
-                -- Clear AFK first; a message sent while flagged AFK gets dropped
-                if UnitIsAFK("player") then
-                    SlashCmdList["AFK"]("")
-                end
-                if not UnitIsAFK("player") then
-                    AutoSpam:PostNext()
-                end
-            end
+            -- Post straight away, AFK or not. The server takes channel messages
+            -- from AFK players fine; toggling /afk first only added a second
+            -- chat packet right before the post.
+            AutoSpam:PostNext()
         else
             -- Timer ran out while stopped: go idle so the next Start posts immediately
             AutoSpam.timerStarted = false
@@ -765,6 +832,15 @@ tickFrame:SetScript("OnUpdate", function()
     end
     if table.getn(AutoSpam.sendQueue) > 0 then
         AutoSpam:ProcessSendQueue(now)
+    end
+    if table.getn(AutoSpam.echoWatch) > 0 then
+        AutoSpam:CheckEchoes(now)
+    end
+
+    -- UIParent may show the logout popup after our event handler ran; hide it again
+    if AutoSpam.campHideAt and now >= AutoSpam.campHideAt then
+        AutoSpam.campHideAt = nil
+        if StaticPopup_Hide then StaticPopup_Hide("CAMP") end
     end
 
     AutoSpam:OnTick(arg1)
@@ -809,9 +885,39 @@ end
 -- Events
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- Idle logout guard
+-- After 30 minutes without keyboard or mouse input the client starts the
+-- same 20 second logout countdown as /camp (PLAYER_CAMPING). Chat posts and
+-- clearing the AFK flag don't count as input, so while posting is running
+-- we cancel that countdown. Logouts you start yourself (/logout, /camp, the
+-- game menu, the keybind) all go through Logout(), so we mark those and
+-- leave them alone.
+---------------------------------------------------------------------------
+
+AutoSpam.userLogoutAt = 0
+local origLogout = Logout
+Logout = function()
+    AutoSpam.userLogoutAt = GetTime()
+    if origLogout then return origLogout() end
+end
+
+function AutoSpam:HandleCamping()
+    if not self.db or not self.db.enabled or self.resumeHold then return end
+    if GetTime() - self.userLogoutAt < 5 then return end
+    if not CancelLogout then return end
+    CancelLogout()
+    if StaticPopup_Hide then StaticPopup_Hide("CAMP") end
+    self.campHideAt = GetTime() + 0.2
+    Print("Stopped an idle logout so posting can keep going.", 1, 0.82, 0)
+end
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("VARIABLES_LOADED")
 eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
+eventFrame:RegisterEvent("PLAYER_CAMPING")
+eventFrame:RegisterEvent("CHAT_MSG_CHANNEL")
+eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 eventFrame:SetScript("OnEvent", function()
     if event == "VARIABLES_LOADED" then
         if AutoSpam.initialized then return end
@@ -835,5 +941,11 @@ eventFrame:SetScript("OnEvent", function()
         if AutoSpam.initialized then
             AutoSpam:HandleWhisper(arg1, arg2)
         end
+    elseif event == "PLAYER_CAMPING" then
+        AutoSpam:HandleCamping()
+    elseif event == "CHAT_MSG_CHANNEL" then
+        if AutoSpam.initialized then AutoSpam:OnChannelEcho(arg1, arg2) end
+    elseif event == "CHAT_MSG_SYSTEM" then
+        if AutoSpam.initialized then AutoSpam:OnSystemDuringWatch(arg1) end
     end
 end)

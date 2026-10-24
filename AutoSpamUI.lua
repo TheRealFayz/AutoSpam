@@ -4,7 +4,7 @@
 local Print = AutoSpam.Print
 local Trim = AutoSpam.Trim
 
-local W, H = 360, 600
+local W, H = 360, 510
 local ROW_H, ROW_GAP = 36, 2
 local TEX = "Interface\\AddOns\\AutoSpam\\Textures\\"
 local PORTRAIT_FRAMES, PORTRAIT_GRID, PORTRAIT_STEP = 16, 4, 0.18
@@ -877,20 +877,29 @@ function AutoSpam:BuildEditorPanel(p)
     local box = CreateFrame("Frame", nil, c)
     box:SetPoint("TOPLEFT", c, "TOPLEFT", 10, -58)
     box:SetWidth(312)
-    box:SetHeight(176)
+    box:SetHeight(86)
     box:SetBackdrop(BOX_BACKDROP)
     box:SetBackdropColor(0, 0, 0, 0.6)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4)
     box:EnableMouse(true)
 
-    -- The scroll frame clips the edit box, so a selection highlight can't spill outside the box
-    local clip = CreateFrame("ScrollFrame", "AutoSpamEditTextClip", box)
+    -- Scrolls when the message is longer than the box. It also clips the edit box,
+    -- so a selection highlight can't spill outside the box.
+    local clip = CreateFrame("ScrollFrame", "AutoSpamEditTextClip", box, "UIPanelScrollFrameTemplate")
     clip:SetPoint("TOPLEFT", box, "TOPLEFT", 8, -8)
-    clip:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -8, 8)
+    clip:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -28, 8)
+    self.edTextScroll = clip
+
+    -- Hidden copy of the text in the same font and width, to measure how tall it wraps
+    local measure = box:CreateFontString(nil, "BACKGROUND", "GameFontHighlight")
+    measure:SetWidth(266)
+    measure:SetJustifyH("LEFT")
+    measure:Hide()
+    self.edTextMeasure = measure
 
     local textBox = CreateFrame("EditBox", "AutoSpamEditText", clip)
-    textBox:SetWidth(296)
-    textBox:SetHeight(160)
+    textBox:SetWidth(270)
+    textBox:SetHeight(70)
     textBox:SetMultiLine(true)
     textBox:SetAutoFocus(false)
     textBox:SetMaxLetters(AutoSpam.MAX_LEN)
@@ -917,6 +926,13 @@ function AutoSpam:BuildEditorPanel(p)
             AutoSpam.draft.text = t
             AutoSpam:EditorChanged()
         end
+        AutoSpam:FitTextBox()
+    end)
+    -- Keep the line you're typing on in view
+    textBox:SetScript("OnCursorChanged", function()
+        AutoSpam.cursorTop = -(arg2 or 0)
+        AutoSpam.cursorHeight = arg4 or 14
+        AutoSpam:ScrollToCursor()
     end)
     clip:SetScrollChild(textBox)
     box:SetScript("OnMouseDown", function() textBox:SetFocus() end)
@@ -952,7 +968,7 @@ function AutoSpam:BuildEditorPanel(p)
 
     -- Channel
     local cl = Label(c, "Channel:", "GameFontNormal")
-    cl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -260)
+    cl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -170)
 
     local dd = CreateFrame("Frame", "AutoSpamChannelDropDown", c, "UIDropDownMenuTemplate")
     dd:SetPoint("LEFT", cl, "RIGHT", -8, -3)
@@ -960,7 +976,7 @@ function AutoSpam:BuildEditorPanel(p)
     self:BuildChannelList(c, dd)
 
     local ccl = Label(c, "Channel name:", "GameFontNormalSmall")
-    ccl:SetPoint("TOPLEFT", c, "TOPLEFT", 24, -290)
+    ccl:SetPoint("TOPLEFT", c, "TOPLEFT", 24, -200)
     self.edCustomLabel = ccl
     local custom = InputBox("AutoSpamEditCustom", c, 150, 50)
     custom:SetPoint("LEFT", ccl, "RIGHT", 12, 0)
@@ -974,10 +990,10 @@ function AutoSpam:BuildEditorPanel(p)
 
     -- Weight
     local wl = Label(c, "Weight: x1", "GameFontNormal")
-    wl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -312)
+    wl:SetPoint("TOPLEFT", c, "TOPLEFT", 12, -222)
     self.edWeightLabel = wl
     local ws = Slider("AutoSpamEditWeight", c, 290, 1, 10, 1, "1", "10")
-    ws:SetPoint("TOPLEFT", c, "TOPLEFT", 16, -330)
+    ws:SetPoint("TOPLEFT", c, "TOPLEFT", 16, -240)
     ws:SetScript("OnValueChanged", function()
         local v = math.floor(this:GetValue() + 0.5)
         AutoSpam.edWeightLabel:SetText("Weight: x" .. v)
@@ -990,7 +1006,7 @@ function AutoSpam:BuildEditorPanel(p)
 
     -- Auto-invite, all settings belong to this message
     local inv = CheckBox(c, "Auto-invite on whisper", 22)
-    inv:SetPoint("TOPLEFT", c, "TOPLEFT", 10, -362)
+    inv:SetPoint("TOPLEFT", c, "TOPLEFT", 10, -272)
     inv:SetScript("OnClick", function()
         if AutoSpam.draft then
             AutoSpam.draft.autoInvite = this:GetChecked() and true or false
@@ -1001,7 +1017,7 @@ function AutoSpam:BuildEditorPanel(p)
     self.edInvite = inv
 
     local conv = CheckBox(c, "Convert to raid", 22)
-    conv:SetPoint("TOPLEFT", c, "TOPLEFT", 190, -362)
+    conv:SetPoint("TOPLEFT", c, "TOPLEFT", 190, -272)
     conv:SetScript("OnClick", function()
         if AutoSpam.draft then
             AutoSpam.draft.inviteConvert = this:GetChecked() and true or false
@@ -1018,7 +1034,7 @@ function AutoSpam:BuildEditorPanel(p)
     self.edConvert = conv
 
     local kl = Label(c, "Keywords:", "GameFontNormalSmall")
-    kl:SetPoint("TOPLEFT", c, "TOPLEFT", 36, -392)
+    kl:SetPoint("TOPLEFT", c, "TOPLEFT", 36, -302)
     self.edKeywordsLabel = kl
     local kw = InputBox("AutoSpamEditKeywords", c, 200, 120)
     kw:SetPoint("LEFT", kl, "RIGHT", 12, 0)
@@ -1038,7 +1054,7 @@ function AutoSpam:BuildEditorPanel(p)
     self.edKeywords = kw
 
     local invNote = Label(c, "Auto-invite settings are per message.", "GameFontDisableSmall")
-    invNote:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -416)
+    invNote:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -326)
 
     local save = Button(c, "Save", 90, 22)
     save:SetPoint("BOTTOM", c, "BOTTOM", -50, 10)
@@ -1132,6 +1148,40 @@ function AutoSpam:BuildChannelList(parent, dd)
     self.channelList = list
 end
 
+-- Grow the edit box to fit its text so the scroll frame knows how far it can scroll
+function AutoSpam:FitTextBox()
+    local tb, sf, fs = self.edText, self.edTextScroll, self.edTextMeasure
+    if not tb or not sf or not fs then return end
+    fs:SetText(tb:GetText() or "")
+    local need = (fs:GetHeight() or 0) + 8
+    local view = sf:GetHeight() or 70
+    local cursorBottom = (self.cursorTop or 0) + (self.cursorHeight or 0) + 4
+    if cursorBottom > need then need = cursorBottom end
+    if need < view then need = view end
+    tb:SetHeight(need)
+    sf:UpdateScrollChildRect()
+end
+
+function AutoSpam:ScrollToCursor()
+    local sf = self.edTextScroll
+    if not sf then return end
+    self:FitTextBox()
+    local top = self.cursorTop or 0
+    local bottom = top + (self.cursorHeight or 14)
+    local cur = sf:GetVerticalScroll() or 0
+    local view = sf:GetHeight() or 70
+    local want = cur
+    if top < cur then
+        want = top
+    elseif bottom > cur + view then
+        want = bottom - view
+    end
+    if want ~= cur then
+        local bar = getglobal("AutoSpamEditTextClipScrollBar")
+        if bar then bar:SetValue(want) else sf:SetVerticalScroll(want) end
+    end
+end
+
 function AutoSpam:OpenInEditor(m)
     if not m then return end
     if self.editMsg and m ~= self.editMsg and self:EditorIsDirty() then
@@ -1178,6 +1228,10 @@ function AutoSpam:EditorLoad(m)
     local d = self.draft
     self.edName:SetText(d.name)
     self.edText:SetText(d.text)
+    self.cursorTop, self.cursorHeight = 0, 14
+    self:FitTextBox()
+    local bar = getglobal("AutoSpamEditTextClipScrollBar")
+    if bar then bar:SetValue(0) end      -- start each message at the top
     self.edCustom:SetText(d.customChannel)
     self.edWeight:SetValue(d.weight)
     self.edWeightLabel:SetText("Weight: x" .. d.weight)
@@ -1385,7 +1439,7 @@ local HELP_TEXT =
     "|cffffd100Logging out while posting|r\n" ..
     "If you log out without stopping, nothing posts when you log back in. A popup counts down 2 minutes: choose Post now to keep going, or Stop posting. If you don't answer, AutoSpam turns itself off.\n\n" ..
     "|cffffd100AFK|r\n" ..
-    "If you're flagged AFK when a post is due, AutoSpam clears the flag first so the message actually goes out.\n\n" ..
+    "Posts keep going out while you're AFK. While posting is on, AutoSpam also stops the 30 minute idle logout. Logging out yourself still works.\n\nIf a World or custom channel post doesn't show up in chat within a few seconds, AutoSpam sends it once more and tells you if it still didn't make it.\n\n" ..
     "|cffffd100Channels|r\n" ..
     "Open the channel list and check as many channels as you like. Click again to uncheck. Each post goes to every checked channel, one second apart.\n\n" ..
     "|cffffd100Placeholders|r\n" ..
