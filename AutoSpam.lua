@@ -818,7 +818,15 @@ tickFrame:SetScript("OnUpdate", function()
             -- Post straight away, AFK or not. The server takes channel messages
             -- from AFK players fine; toggling /afk first only added a second
             -- chat packet right before the post.
-            AutoSpam:PostNext()
+            -- pcall so a hidden script error shows up in chat instead of
+            -- silently skipping the post (script errors are often turned off)
+            local ok, err = pcall(function() AutoSpam:PostNext() end)
+            if not ok then
+                Print("Post failed with an error: " .. tostring(err), 1, 0.3, 0.3)
+            end
+            if AutoSpam.db.debugMode then
+                Print("Timer fired. Sent so far: " .. AutoSpam.sentCount .. ".", 0, 1, 1)
+            end
         else
             -- Timer ran out while stopped: go idle so the next Start posts immediately
             AutoSpam.timerStarted = false
@@ -904,15 +912,64 @@ end
 
 function AutoSpam:HandleCamping()
     if not self.db or not self.db.enabled or self.resumeHold then return end
+    self:InstallIdleFilter()   -- catch chat windows another addon re-hooked since login
     if GetTime() - self.userLogoutAt < 5 then return end
     if not CancelLogout then return end
     CancelLogout()
     if StaticPopup_Hide then StaticPopup_Hide("CAMP") end
     self.campHideAt = GetTime() + 0.2
-    Print("Stopped an idle logout so posting can keep going.", 1, 0.82, 0)
+    -- The client asks again every few seconds while you stay idle; say so once
+    if not self.campNoteAt or GetTime() - self.campNoteAt > 600 then
+        Print("Stopped an idle logout so posting can keep going.", 1, 0.82, 0)
+    end
+    self.campNoteAt = GetTime()
+end
+
+-- The client repeats "You have been inactive for some time..." in chat every
+-- few seconds while you stay idle. While AutoSpam is holding off the logout
+-- that line is just spam, so drop it from the chat windows.
+local function IsIdleSpam(text)
+    if not text or not AutoSpam.db or not AutoSpam.db.enabled then return false end
+    if IDLE_MESSAGE and text == IDLE_MESSAGE then return true end
+    return string.find(text, "inactive for some time", 1, true) and true or false
+end
+
+-- Filters at two levels, since chat addons (pfUI and friends) replace a chat
+-- window's AddMessage at different times:
+--  1. the system chat event, before any chat window sees it
+--  2. each chat window's AddMessage, re-wrapped whenever another addon
+--     has swapped in its own version since we last looked
+local function WrapChatFrames()
+    local n = NUM_CHAT_WINDOWS or 7
+    if n < 7 then n = 7 end
+    for i = 1, n do
+        local cf = getglobal("ChatFrame" .. i)
+        if cf and cf.AddMessage and cf.AddMessage ~= cf.autoSpamFilter then
+            local orig = cf.AddMessage
+            local wrapper = function(frame, text, a1, a2, a3, a4, a5, a6, a7, a8, a9)
+                if IsIdleSpam(text) then return end
+                return orig(frame, text, a1, a2, a3, a4, a5, a6, a7, a8, a9)
+            end
+            cf.autoSpamFilter = wrapper
+            cf.AddMessage = wrapper
+        end
+    end
+end
+
+function AutoSpam:InstallIdleFilter()
+    if not self.idleEventHooked and ChatFrame_OnEvent then
+        self.idleEventHooked = true
+        local origOnEvent = ChatFrame_OnEvent
+        ChatFrame_OnEvent = function(ev)
+            if ev == "CHAT_MSG_SYSTEM" and IsIdleSpam(arg1) then return end
+            return origOnEvent(ev)
+        end
+    end
+    WrapChatFrames()
 end
 
 local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("VARIABLES_LOADED")
 eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
 eventFrame:RegisterEvent("PLAYER_CAMPING")
@@ -941,6 +998,9 @@ eventFrame:SetScript("OnEvent", function()
         if AutoSpam.initialized then
             AutoSpam:HandleWhisper(arg1, arg2)
         end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Late enough that chat addons have set up their windows first
+        AutoSpam:InstallIdleFilter()
     elseif event == "PLAYER_CAMPING" then
         AutoSpam:HandleCamping()
     elseif event == "CHAT_MSG_CHANNEL" then
