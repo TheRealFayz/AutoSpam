@@ -329,6 +329,144 @@ function AutoSpam:ConfirmDelete(m)
 end
 
 ---------------------------------------------------------------------------
+-- Sharing: the Share window (sender) and the offer popup (receiver)
+---------------------------------------------------------------------------
+
+function AutoSpam:CreateShareDialog()
+    local p = Dialog("AutoSpamShareDialog", "Send to player", "Send to guild")
+    p:SetWidth(340)
+    p:ClearAllPoints()
+    p:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+    table.insert(UISpecialFrames, "AutoSpamShareDialog")   -- Escape closes it
+
+    local nl = Label(p, "Player:", "GameFontNormal")
+    p.nameLabel = nl
+    local nb = InputBox("AutoSpamShareName", p, 150, 12)
+    nb:SetPoint("LEFT", nl, "RIGHT", 12, 0)
+    nb:SetScript("OnEnterPressed", function() AutoSpam:ShareSendTo(this:GetText()) end)
+    nb:SetScript("OnEscapePressed", function() AutoSpam.shareDialog:Hide() end)
+    p.nameBox = nb
+
+    -- Three buttons in a row: player, guild, cancel
+    p.button1:SetWidth(100)
+    p.button2:SetWidth(100)
+    p.button1:ClearAllPoints()
+    p.button2:ClearAllPoints()
+    p.button2:SetPoint("BOTTOM", p, "BOTTOM", 0, 16)
+    p.button1:SetPoint("RIGHT", p.button2, "LEFT", -6, 0)
+    local cancel = Button(p, "Cancel", 100, 22)
+    cancel:SetPoint("LEFT", p.button2, "RIGHT", 6, 0)
+    cancel:SetScript("OnClick", function() AutoSpam.shareDialog:Hide() end)
+    p.cancelButton = cancel
+
+    p.button1:SetScript("OnClick", function() AutoSpam:ShareSendTo(AutoSpam.shareDialog.nameBox:GetText()) end)
+    p.button2:SetScript("OnClick", function() AutoSpam:ShareSendGuild() end)
+    p:SetScript("OnHide", function() AutoSpam.shareDialog.nameBox:ClearFocus() end)
+
+    -- Body text on top, name row under it, buttons at the bottom
+    p.SetBody = function(self, body)
+        self.text:SetText(body)
+        local h = self.text:GetHeight() or 30
+        self.nameLabel:ClearAllPoints()
+        self.nameLabel:SetPoint("TOPLEFT", self, "TOPLEFT", 40, -(20 + h + 14))
+        self:SetHeight(h + 112)
+    end
+    self.shareDialog = p
+end
+
+function AutoSpam:OpenShare()
+    local m = self.editMsg
+    if not m then return end
+    if self:EditorIsDirty() then
+        Print("Save your changes before sharing, so the message you send is the one you see.", 1, 0.3, 0.3)
+        return
+    end
+    if Trim(m.text) == "" then
+        Print("Write some text before sharing.", 1, 0.3, 0.3)
+        return
+    end
+    local inGuild = IsInGuild and IsInGuild()
+    if inGuild and GuildRoster then GuildRoster() end   -- fresh online/offline info for the name check
+    if not self.shareDialog then self:CreateShareDialog() end
+    local p = self.shareDialog
+    p.msg = m
+    if inGuild then
+        p.button2:Enable()
+        p:SetBody("Share |cffffd100" .. m.name .. "|r\n\n" ..
+            "Send it to any player by name, or offer it to everyone in your guild who has AutoSpam. " ..
+            "They get a popup to accept or decline. Auto-invite settings aren't shared.")
+    else
+        p.button2:Disable()
+        p:SetBody("Share |cffffd100" .. m.name .. "|r\n\n" ..
+            "Send it to any player by name. They get a popup to accept or decline, " ..
+            "as long as they have AutoSpam too. Auto-invite settings aren't shared.")
+    end
+    p.nameBox:SetText("")
+    p:Show()
+    p.nameBox:SetFocus()
+end
+
+function AutoSpam:ShareSendTo(name)
+    local p = self.shareDialog
+    if not p or not p.msg then return end
+    if self:ShareMessage(p.msg, name) then p:Hide() end
+end
+
+function AutoSpam:ShareSendGuild()
+    local p = self.shareDialog
+    if not p or not p.msg then return end
+    if self:ShareMessage(p.msg, nil) then p:Hide() end
+end
+
+function AutoSpam:CreateOfferPopup()
+    local p = Dialog("AutoSpamOfferPopup", "Accept", "Decline")
+    p:ClearAllPoints()
+    p:SetPoint("TOP", UIParent, "TOP", 0, -300)   -- clear of the dry run and login popups
+    p.button1:SetScript("OnClick", function() AutoSpam:CloseOffer("A") end)
+    p.button2:SetScript("OnClick", function() AutoSpam:CloseOffer("D") end)
+    p:SetScript("OnUpdate", function() AutoSpam:UpdateOfferPopup() end)
+    self.offerPopup = p
+end
+
+function AutoSpam:ShowNextOffer()
+    if not self.offerPopup then self:CreateOfferPopup() end
+    local p = self.offerPopup
+    if p:IsShown() and p.offer then return end
+    local o = table.remove(self.offers, 1)
+    if not o then return end
+    p.offer = o
+    p.deadline = GetTime() + self.SHARE_ANSWER
+    self:UpdateOfferPopup()
+    p:Show()
+end
+
+function AutoSpam:CloseOffer(answer)
+    local p = self.offerPopup
+    if not p then return end
+    local o = p.offer
+    p.offer = nil
+    p:Hide()
+    self:AnswerOffer(o, answer)
+    self:ShowNextOffer()
+end
+
+function AutoSpam:UpdateOfferPopup()
+    local p = self.offerPopup
+    if not p or not p.offer then return end
+    local r = p.deadline - GetTime()
+    if r <= 0 then
+        self:CloseOffer("N")
+        return
+    end
+    local o = p.offer
+    p:SetBody("|cffffffff" .. o.from .. "|r wants to share an AutoSpam message with you.\n\n" ..
+        "|cffffd100" .. o.name .. "|r  |cff999999[" .. self:ChannelsLabel(o.channels, o.customChannel) .. "]|r\n" ..
+        "|cffcccccc" .. Preview(o.text, 160) .. "|r\n\n" ..
+        "It's added unchecked, so nothing posts until you turn it on.\n" ..
+        "|cff999999Closes in " .. FormatTime(math.ceil(r)) .. "|r")
+end
+
+---------------------------------------------------------------------------
 -- Minimap button
 ---------------------------------------------------------------------------
 
@@ -1057,14 +1195,25 @@ function AutoSpam:BuildEditorPanel(p)
     invNote:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -326)
 
     local save = Button(c, "Save", 90, 22)
-    save:SetPoint("BOTTOM", c, "BOTTOM", -50, 10)
+    save:SetPoint("BOTTOM", c, "BOTTOM", -100, 10)
     save:SetScript("OnClick", function() AutoSpam:EditorSave() end)
 
     local revert = Button(c, "Revert", 90, 22)
-    revert:SetPoint("LEFT", save, "RIGHT", 10, 0)
+    revert:SetPoint("BOTTOM", c, "BOTTOM", 0, 10)
     revert:SetScript("OnClick", function()
         if AutoSpam.editMsg then AutoSpam:EditorLoad(AutoSpam.editMsg) end
     end)
+
+    local share = Button(c, "Share", 90, 22)
+    share:SetPoint("BOTTOM", c, "BOTTOM", 100, 10)
+    share:SetScript("OnClick", function() AutoSpam:OpenShare() end)
+    share:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Share")
+        GameTooltip:AddLine("Send this message to a player by name, or offer it to your whole guild. They need AutoSpam too.", 1, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    share:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
 -- Channel choices. The stock dropdown list lives outside this window, so it ignores
@@ -1439,7 +1588,7 @@ local HELP_TEXT =
     "|cffffd100Logging out while posting|r\n" ..
     "If you log out without stopping, nothing posts when you log back in. A popup counts down 2 minutes: choose Post now to keep going, or Stop posting. If you don't answer, AutoSpam turns itself off.\n\n" ..
     "|cffffd100AFK|r\n" ..
-    "Posts keep going out while you're AFK. While posting is on, AutoSpam also stops the 30 minute idle logout. Logging out yourself still works.\n\nIf a World or custom channel post doesn't show up in chat within a few seconds, AutoSpam sends it once more and tells you if it still didn't make it.\n\n" ..
+    "Posts keep going out while you're AFK. While posting is on, AutoSpam also stops the 30 minute idle logout and hides the game's repeating \"You have been inactive\" message. Logging out yourself still works.\n\nIf a World or custom channel post doesn't show up in chat within a few seconds, AutoSpam sends it once more and tells you if it still didn't make it.\n\n" ..
     "|cffffd100Channels|r\n" ..
     "Open the channel list and check as many channels as you like. Click again to uncheck. Each post goes to every checked channel, one second apart.\n\n" ..
     "|cffffd100Placeholders|r\n" ..
@@ -1451,6 +1600,8 @@ local HELP_TEXT =
     "Click into the message text, then shift-click an item in your bags, on your character, or a link in chat.\n\n" ..
     "|cffffd100Auto-invite|r\n" ..
     "Each message has its own auto-invite switch, keywords and convert-to-raid option in the Editor. Turn it on for your raid LFM and leave it off for guild recruiting. A whisper that exactly matches one of that message's keywords gets an invite, but only while the message is enabled and posting is on.\n\n" ..
+    "|cffffd100Sharing|r\n" ..
+    "Open a message in the Editor and click Share. Type a player's name and click Send to player, or click Send to guild to offer it to everyone in your guild who has AutoSpam. They get a popup to accept or decline, and you see their answer in chat. Players outside your guild get it by whisper, which AutoSpam hides from chat. If they don't have AutoSpam, they get one whisper saying you tried to share a message. Shared messages arrive unchecked, and auto-invite settings aren't shared.\n\n" ..
     "|cffffd100Dry run|r\n" ..
     "Turn on dry run in Settings to see what would be posted, printed only to your own chat. After each dry run post a popup reminds you, counts down to the next one, and has a button to go live.\n\n" ..
     "|cffffd100Commands|r\n" ..

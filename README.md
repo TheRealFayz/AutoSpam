@@ -12,10 +12,11 @@ You can also download AutoSpam from OctoWoW's [Gitea](https://octowow.st/git/Fay
 - **Any channels you want.** Check as many as you like per message: Say, Yell, Guild, Officer, Party, Raid, World, or a custom channel you've joined.
 - **Placeholders.** Put `{GROUP}`, `{ZONE}`, `{TIME}`, `{NAME}` or `{GUILD}` in a message and it's filled in every time it posts. `{UTC Sunday 1300}` turns your local time into UTC so everyone can read it in their own time zone.
 - **Auto-invite per message.** Turn it on for your raid LFM and leave it off for guild recruiting. Each message has its own keywords and its own convert to raid option.
+- **Sharing.** Send a message to any player by name, or offer it to everyone in your guild who has AutoSpam. They get a popup to accept or decline.
 - **Item links.** Shift-click items in your bags, on your character, or links in chat to drop them into a message.
 - **Safe logins.** If you logged out with posting still on, nothing posts when you log back in. A popup gives you 2 minutes to choose Post now, otherwise AutoSpam turns itself off.
-- **AFK friendly.** Posts keep going out while you're AFK. While posting is on, AutoSpam also stops the game from logging you out after 30 minutes idle. Logging out yourself with /logout, /camp or the game menu still works like normal.
-- **Post check.** The server echoes every channel post back to you. If a post doesn't show up within a few seconds, AutoSpam sends it once more, and tells you in chat if it still didn't make it.
+- **AFK friendly.** Posts keep going out while you're AFK, and AutoSpam stops the game from logging you out after 30 minutes idle. Logging out yourself still works like normal.
+- **Post check.** If a World or custom channel post doesn't show up in chat, AutoSpam sends it once more and tells you if it still didn't make it.
 - **Dry run.** Prints what would be posted to your own chat window and sends nothing. Each dry run post pops up a reminder that counts down to the next one and has a button to go live, so you can't forget it's on.
 - **Explicit save.** Edits only stick when you click Save. If you try to leave with unsaved changes, it asks first.
 - **Resizable.** Drag the grip in the bottom right corner to make the window bigger or smaller. Right-click it to reset.
@@ -53,7 +54,7 @@ Each message shows its channels, name, weight (if above 1), `(inv)` if auto-invi
 - **Channel** opens a list where you check every channel the message should go to. Click a channel again to uncheck it. Check Custom Channel to type a channel name.
 - **Weight** sets how often it comes up compared to your other messages.
 - **Auto-invite on whisper** turns on invites for this message. See below.
-- **Save** keeps your changes. **Revert** puts the message back the way it was.
+- **Save** keeps your changes. **Revert** puts the message back the way it was. **Share** sends the message to another player or your guild. See Sharing below.
 
 <p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Editor.png?raw=true" alt="AutoSpam Editor tab"></p>
 
@@ -61,7 +62,7 @@ Each message shows its channels, name, weight (if above 1), `(inv)` if auto-invi
 
 - **Post every** sets the time between posts, from 1 to 10 minutes in 30 second steps.
 - **Dry run** prints posts to your own chat instead of sending them.
-- **Debug messages** prints extra detail to chat if you're tracking down a problem.
+- **Debug messages** prints extra detail to chat if you're tracking down a problem: which message is posting, when the timer fires and how many posts have gone out, and when each channel post shows up.
 
 <p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Settings.png?raw=true" alt="AutoSpam Settings tab"></p>
 
@@ -129,6 +130,25 @@ Set the interval on the **Settings** tab, anywhere from 1 to 10 minutes. The cou
 3. If the timer runs out while you're stopped, it goes idle. The next **Start** posts right away.
 4. **Post now** sends a message immediately and restarts the timer.
 
+## AFK and Idle Logout
+
+Posts keep going out while you're flagged AFK. AutoSpam doesn't touch your AFK status.
+
+Normally the game logs you out after 30 minutes without keyboard or mouse input, and chat posts don't count as input. While posting is on, AutoSpam cancels that logout every time the game asks, so you stay online:
+
+- You'll see "Stopped an idle logout so posting can keep going." once per idle stretch.
+- The game's own "You have been inactive for some time" message repeats every few seconds while you're idle. AutoSpam hides it from your chat while posting is on.
+- Logging out yourself with `/logout`, `/camp`, the game menu or the logout key still works like normal.
+- When posting is stopped, the idle logout works like normal too.
+
+## Post Check
+
+The server echoes every channel post back to the player who sent it. AutoSpam watches for that echo on World and custom channel posts:
+
+- If a post doesn't show up within 6 seconds, AutoSpam sends it once more and says so in chat.
+- If the second try doesn't show up either, you get a red note in chat, along with anything the server said at the same moment, like a mute or spam warning.
+- If a post fails with a script error, the error is shown in chat instead of the post being skipped silently.
+
 ## Auto-Invite
 
 Auto-invite is set up on each message in the Editor.
@@ -138,6 +158,23 @@ Auto-invite is set up on each message in the Editor.
 - **Convert to raid** turns your party into a raid when it's full so invites keep going out.
 
 Invites only happen while posting is running and the message is checked in the Messages list. You need to be the group leader (or a raid assistant) for invites to work, and the same player won't be invited twice within 10 seconds.
+
+## Sharing
+
+Open a message in the Editor and click **Share**.
+
+- **Send to player** sends it to one player. Type their name first. They don't have to be in your guild.
+- **Send to guild** offers it to everyone in your guild who is online and has AutoSpam. This button only works when you're in a guild.
+
+Each person gets a popup showing who sent it, the message name, its channels and a preview of the text, with **Accept** and **Decline**. If they don't answer within a minute, it closes on its own. You'll see each answer in your chat.
+
+A few things to know:
+
+- Guildmates get the message over the guild's hidden addon channel. Anyone else gets it by whisper, and AutoSpam hides those whispers from chat on both ends.
+- If the player doesn't have AutoSpam, they get a single whisper saying you tried to share an AutoSpam message, and nothing else is sent. You'll get a note in chat that they don't seem to have it.
+- Save your changes first. AutoSpam shares the saved version of the message.
+- Shared messages arrive unchecked, so nothing posts until the person turns it on. If they already have a message with that name, the new one gets a number added, like "Guild Recruitment (2)".
+- The text, channels and weight are shared. Auto-invite settings aren't, since those belong to your own raid.
 
 ## Item Links
 

@@ -139,6 +139,10 @@ function AutoSpam:Initialize()
     self.inviteQueue = {}
     self.sendQueue = {}
     self.echoWatch = {}
+    self.addonQueue = {}
+    self.incoming = {}
+    self.outgoing = {}
+    self.offers = {}
 end
 
 ---------------------------------------------------------------------------
@@ -844,6 +848,10 @@ tickFrame:SetScript("OnUpdate", function()
     if table.getn(AutoSpam.echoWatch) > 0 then
         AutoSpam:CheckEchoes(now)
     end
+    if table.getn(AutoSpam.addonQueue) > 0 then
+        AutoSpam:ProcessAddonQueue(now)
+    end
+    AutoSpam:CheckShares(now)
 
     -- UIParent may show the logout popup after our event handler ran; hide it again
     if AutoSpam.campHideAt and now >= AutoSpam.campHideAt then
@@ -894,6 +902,331 @@ end
 ---------------------------------------------------------------------------
 
 ---------------------------------------------------------------------------
+-- Sharing messages with guildmates
+-- Two ways to carry a share, since 1.12 has no addon whispers:
+--  * Guild: hidden addon messages on the guild channel. A guild share is
+--    addressed to "*"; a targeted share to an online guildmate carries their
+--    name and everyone else ignores it.
+--  * Whisper: for a player outside your guild (or when you have none).
+--    AutoSpam first sends one readable whisper. If they run AutoSpam it's
+--    hidden and answered behind the scenes; if they don't, that one line
+--    tells them what it was and nothing else is sent. The data whispers that
+--    follow are hidden from chat on both sides.
+-- Either way the message is split into small pieces, sent a moment apart so
+-- the server doesn't see a burst, and put back together on the other end.
+-- Auto-invite settings are not shared.
+---------------------------------------------------------------------------
+
+local SHARE_PREFIX = "AutoSpam"
+local SHARE_PIECE = 180       -- characters of message data per addon message
+local SHARE_GAP = 0.25        -- seconds between addon messages
+local SHARE_WAIT = 75         -- how long the sender waits for answers
+local SHARE_WHISPER_GAP = 0.5 -- whispers go a little slower than addon messages
+local SHARE_PROBE_WAIT = 15   -- how long to wait for a whisper target's AutoSpam to answer
+local WHISPER_TAG = "AutoSpam~"   -- marks hidden data whispers
+AutoSpam.SHARE_ANSWER = 60    -- how long the receiver's popup stays up
+
+local function Escape(s)
+    s = string.gsub(s or "", "%%", "%%25")
+    s = string.gsub(s, "~", "%%7E")
+    s = string.gsub(s, "|", "%%7C")
+    s = string.gsub(s, "\n", " ")
+    return s
+end
+
+local function Unescape(s)
+    local r = string.gsub(s or "", "%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
+    return r
+end
+
+local function Split(s)
+    local t = {}
+    for part in string.gfind(s .. "~", "([^~]*)~") do
+        table.insert(t, part)
+    end
+    return t
+end
+
+function AutoSpam:IsChannelValue(v)
+    for i = 1, table.getn(self.CHANNELS) do
+        if self.CHANNELS[i].value == v then return true end
+    end
+    return false
+end
+
+-- "online", "offline", or "unknown" (not in the roster we can see right now)
+function AutoSpam:GuildMemberStatus(name)
+    if not GetNumGuildMembers or not GetGuildRosterInfo then return "unknown" end
+    local want = string.lower(name)
+    for i = 1, GetNumGuildMembers() do
+        local n, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+        if n and string.lower(n) == want then
+            return online and "online" or "offline"
+        end
+    end
+    return "unknown"
+end
+
+-- via "G" = guild addon channel, "W" = hidden whisper to `to`.
+-- raw = send the text as an ordinary whisper (the readable first contact).
+function AutoSpam:QueueAddon(msg, via, to, raw)
+    table.insert(self.addonQueue, { msg = msg, via = via or "G", to = to, raw = raw })
+end
+
+function AutoSpam:ProcessAddonQueue(now)
+    local item = self.addonQueue[1]
+    if not item then return end
+    local gap = (item.via == "W") and SHARE_WHISPER_GAP or SHARE_GAP
+    if now - (self.lastAddonSend or 0) < gap then return end
+    table.remove(self.addonQueue, 1)
+    if item.via == "W" then
+        SendChatMessage(item.raw and item.msg or (WHISPER_TAG .. item.msg), "WHISPER", nil, item.to)
+    else
+        SendAddonMessage(SHARE_PREFIX, item.msg, "GUILD")
+    end
+    self.lastAddonSend = now
+end
+
+-- The readable first-contact whisper: "... (#123456)"
+local function ProbeText(id)
+    return "[AutoSpam] I'd like to share an AutoSpam message with you. You need the AutoSpam addon to receive it. (#" .. id .. ")"
+end
+
+-- Is this whisper one of ours that should stay out of the chat window?
+function AutoSpam:IsShareWhisper(text)
+    if not text then return false end
+    if string.sub(text, 1, string.len(WHISPER_TAG)) == WHISPER_TAG then return true end
+    if string.find(text, "^%[AutoSpam%] .*%(#%d+%)$") then return true end
+    return false
+end
+
+-- A whisper came in. Returns true if it was a share whisper (handled here).
+function AutoSpam:OnShareWhisper(text, sender)
+    if not text or not sender then return false end
+    if string.sub(text, 1, string.len(WHISPER_TAG)) == WHISPER_TAG then
+        self:OnAddonMessage(SHARE_PREFIX, string.sub(text, string.len(WHISPER_TAG) + 1), sender, "W")
+        return true
+    end
+    local _, _, id = string.find(text, "^%[AutoSpam%] .*%(#(%d+)%)$")
+    if id then
+        -- We have AutoSpam: tell the sender to go ahead
+        self:QueueAddon("K~" .. id, "W", sender)
+        return true
+    end
+    return false
+end
+
+-- target = a player's name, or nil to offer it to the whole guild
+function AutoSpam:ShareMessage(m, target)
+    local inGuild = IsInGuild and IsInGuild()
+    if not m or Trim(m.text) == "" then
+        Print("Write some text before sharing.", 1, 0.3, 0.3)
+        return false
+    end
+
+    local guild = (target == nil)
+    local via = "G"
+    if guild then
+        if not inGuild then
+            Print("You need to be in a guild to share with your guild. You can still send it to a player by name.", 1, 0.3, 0.3)
+            return false
+        end
+    else
+        target = Trim(target)
+        if target == "" then
+            Print("Enter the name of the player to share with.", 1, 0.3, 0.3)
+            return false
+        end
+        if string.find(target, "[~%s]") then
+            Print("'" .. target .. "' isn't a valid character name.", 1, 0.3, 0.3)
+            return false
+        end
+        if string.lower(target) == string.lower(UnitName("player") or "") then
+            Print("You can't share a message with yourself.", 1, 0.3, 0.3)
+            return false
+        end
+        local status = inGuild and self:GuildMemberStatus(target) or "unknown"
+        if status == "offline" then
+            Print(target .. " is offline right now.", 1, 0.3, 0.3)
+            return false
+        end
+        -- Online guildmates get the quiet guild channel; anyone else gets whispers
+        if status ~= "online" then via = "W" end
+    end
+    if via == "G" and not SendAddonMessage then
+        Print("This game client can't send addon messages, so guild sharing isn't available.", 1, 0.3, 0.3)
+        return false
+    end
+
+    local id = tostring(math.random(100000, 999999))
+    local payload = table.concat({
+        Escape(m.name),
+        Escape(m.text),
+        Escape(table.concat(self:CheckedChannels(m.channels), ",")),
+        Escape(m.customChannel or ""),
+        tostring(m.weight or 1),
+    }, "~")
+    local n = math.ceil(string.len(payload) / SHARE_PIECE)
+    local to = guild and "*" or target
+    local pieces = {}
+    for i = 1, n do
+        local piece = string.sub(payload, (i - 1) * SHARE_PIECE + 1, i * SHARE_PIECE)
+        table.insert(pieces, "D~" .. id .. "~" .. to .. "~" .. i .. "~" .. n .. "~" .. piece)
+    end
+
+    local out = {
+        name = m.name, target = to, guild = guild, via = via, answers = 0,
+        deadline = GetTime() + SHARE_WAIT + n * SHARE_WHISPER_GAP,
+    }
+    self.outgoing[id] = out
+
+    if via == "W" then
+        -- Ask first; the pieces only go out once their AutoSpam answers
+        out.pieces = pieces
+        out.probing = true
+        out.probeDeadline = GetTime() + SHARE_PROBE_WAIT
+        self:QueueAddon(ProbeText(id), "W", target, true)
+    else
+        for i = 1, n do self:QueueAddon(pieces[i], "G") end
+    end
+
+    if guild then
+        Print("Offering '" .. m.name .. "' to your guild. Anyone running AutoSpam gets a popup.", 0, 1, 1)
+    else
+        Print("Offering '" .. m.name .. "' to " .. target .. ".", 0, 1, 1)
+    end
+    return true
+end
+
+-- via is "W" when it arrived as a hidden whisper, otherwise the guild channel
+function AutoSpam:OnAddonMessage(prefix, msg, sender, via)
+    if prefix ~= SHARE_PREFIX or not msg or not sender then return end
+    local me = UnitName("player") or ""
+    if sender == me then return end
+
+    local kind = string.sub(msg, 1, 2)
+    if kind == "D~" then
+        local _, _, id, to, i, n, piece = string.find(msg, "^D~(%d+)~([^~]*)~(%d+)~(%d+)~(.*)$")
+        if not id then return end
+        if to ~= "*" and string.lower(to) ~= string.lower(me) then return end
+        i, n = tonumber(i), tonumber(n)
+        if n < 1 or n > 20 or i < 1 or i > n then return end
+
+        local key = sender .. ":" .. id
+        local buf = self.incoming[key]
+        if not buf then
+            buf = { parts = {}, got = 0, n = n, started = GetTime() }
+            self.incoming[key] = buf
+        end
+        if not buf.parts[i] then
+            buf.parts[i] = piece
+            buf.got = buf.got + 1
+        end
+        if buf.got < buf.n then return end
+        self.incoming[key] = nil
+
+        local f = Split(table.concat(buf.parts, "", 1, buf.n))
+        if table.getn(f) < 5 then return end
+        local offer = {
+            from = sender, id = id, guild = (to == "*"), via = (via == "W") and "W" or "G",
+            name = Trim(Unescape(f[1])),
+            text = string.sub(Unescape(f[2]), 1, self.MAX_LEN),
+            channels = {},
+            customChannel = Unescape(f[4]),
+            weight = math.floor(tonumber(f[5]) or 1),
+        }
+        if offer.name == "" then offer.name = "Shared message" end
+        if offer.weight < 1 then offer.weight = 1 end
+        if offer.weight > 10 then offer.weight = 10 end
+        for v in string.gfind(Unescape(f[3]), "[^,]+") do
+            if self:IsChannelValue(v) then offer.channels[v] = true end
+        end
+        if table.getn(self:CheckedChannels(offer.channels)) == 0 then offer.channels = { SAY = true } end
+
+        table.insert(self.offers, offer)
+        if self.ShowNextOffer then self:ShowNextOffer() end
+
+    elseif kind == "K~" then
+        -- Their AutoSpam answered our first whisper: send the message
+        local _, _, id = string.find(msg, "^K~(%d+)$")
+        local out = id and self.outgoing[id]
+        if not out or not out.probing then return end
+        if string.lower(out.target) ~= string.lower(sender) then return end
+        out.probing = nil
+        for i = 1, table.getn(out.pieces) do self:QueueAddon(out.pieces[i], "W", sender) end
+        out.pieces = nil
+
+    elseif kind == "R~" then
+        local _, _, id, to, answer = string.find(msg, "^R~(%d+)~([^~]*)~(%a)$")
+        if not id or string.lower(to) ~= string.lower(me) then return end
+        local out = self.outgoing[id]
+        if not out then return end
+        out.answers = out.answers + 1
+        if answer == "A" then
+            Print(sender .. " accepted '" .. out.name .. "'.", 0, 1, 0)
+        elseif answer == "D" then
+            Print(sender .. " declined '" .. out.name .. "'.", 1, 0.82, 0)
+        else
+            Print(sender .. " didn't answer the offer for '" .. out.name .. "'.", 1, 0.82, 0)
+        end
+        if not out.guild then self.outgoing[id] = nil end
+    end
+end
+
+-- answer is "A" (accept), "D" (decline) or "N" (popup timed out)
+function AutoSpam:AnswerOffer(offer, answer)
+    if not offer then return end
+    self:QueueAddon("R~" .. offer.id .. "~" .. offer.from .. "~" .. answer, offer.via, offer.from)
+    if answer == "A" then
+        self:ImportOffer(offer)
+    elseif answer == "D" then
+        Print("Declined '" .. offer.name .. "' from " .. offer.from .. ".", 1, 0.82, 0)
+    else
+        Print("The offer of '" .. offer.name .. "' from " .. offer.from .. " timed out.", 1, 0.82, 0)
+    end
+end
+
+function AutoSpam:ImportOffer(o)
+    local name, k = o.name, 2
+    while self:FindByName(name) do
+        name = o.name .. " (" .. k .. ")"
+        k = k + 1
+    end
+    local picked = self:CheckedChannels(o.channels)
+    local m = {
+        name = name, text = o.text, enabled = false,
+        channels = o.channels, channel = picked[1], customChannel = o.customChannel or "",
+        weight = o.weight or 1,
+        autoInvite = false, inviteKeywords = DEFAULT_KEYWORDS, inviteConvert = false,
+    }
+    table.insert(self.db.messages, m)
+    Print("Added '" .. name .. "' from " .. o.from .. ". It stays unchecked until you turn it on.", 0, 1, 0)
+    self:RefreshUI()
+    return m
+end
+
+function AutoSpam:CheckShares(now)
+    for key, buf in pairs(self.incoming) do
+        if now - buf.started > 30 then self.incoming[key] = nil end
+    end
+    for id, out in pairs(self.outgoing) do
+        if out.probing and now >= out.probeDeadline then
+            self.outgoing[id] = nil
+            Print(out.target .. " doesn't seem to have AutoSpam, or isn't online. They got one whisper saying you tried to share a message.", 1, 0.82, 0)
+        elseif now >= out.deadline then
+            self.outgoing[id] = nil
+            if out.answers == 0 then
+                if out.guild then
+                    Print("No guildmates answered the offer for '" .. out.name .. "'. Nobody else online may be running AutoSpam.", 1, 0.82, 0)
+                else
+                    Print("No answer from " .. out.target .. " about '" .. out.name .. "'. They may be offline or not running AutoSpam.", 1, 0.82, 0)
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Idle logout guard
 -- After 30 minutes without keyboard or mouse input the client starts the
 -- same 20 second logout countdown as /camp (PLAYER_CAMPING). Chat posts and
@@ -934,6 +1267,13 @@ local function IsIdleSpam(text)
     return string.find(text, "inactive for some time", 1, true) and true or false
 end
 
+-- A shown chat line that carries one of our share whispers
+local function IsShareLine(text)
+    if not text then return false end
+    if string.find(text, WHISPER_TAG, 1, true) then return true end
+    return string.find(text, "[AutoSpam] I'd like to share", 1, true) and string.find(text, "%(#%d+%)") and true or false
+end
+
 -- Filters at two levels, since chat addons (pfUI and friends) replace a chat
 -- window's AddMessage at different times:
 --  1. the system chat event, before any chat window sees it
@@ -947,7 +1287,7 @@ local function WrapChatFrames()
         if cf and cf.AddMessage and cf.AddMessage ~= cf.autoSpamFilter then
             local orig = cf.AddMessage
             local wrapper = function(frame, text, a1, a2, a3, a4, a5, a6, a7, a8, a9)
-                if IsIdleSpam(text) then return end
+                if IsIdleSpam(text) or IsShareLine(text) then return end
                 return orig(frame, text, a1, a2, a3, a4, a5, a6, a7, a8, a9)
             end
             cf.autoSpamFilter = wrapper
@@ -962,6 +1302,7 @@ function AutoSpam:InstallIdleFilter()
         local origOnEvent = ChatFrame_OnEvent
         ChatFrame_OnEvent = function(ev)
             if ev == "CHAT_MSG_SYSTEM" and IsIdleSpam(arg1) then return end
+            if (ev == "CHAT_MSG_WHISPER" or ev == "CHAT_MSG_WHISPER_INFORM") and AutoSpam:IsShareWhisper(arg1) then return end
             return origOnEvent(ev)
         end
     end
@@ -975,6 +1316,7 @@ eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
 eventFrame:RegisterEvent("PLAYER_CAMPING")
 eventFrame:RegisterEvent("CHAT_MSG_CHANNEL")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:SetScript("OnEvent", function()
     if event == "VARIABLES_LOADED" then
         if AutoSpam.initialized then return end
@@ -995,7 +1337,7 @@ eventFrame:SetScript("OnEvent", function()
             if AutoSpam.ShowResumePopup then AutoSpam:ShowResumePopup() end
         end
     elseif event == "CHAT_MSG_WHISPER" then
-        if AutoSpam.initialized then
+        if AutoSpam.initialized and not AutoSpam:OnShareWhisper(arg1, arg2) then
             AutoSpam:HandleWhisper(arg1, arg2)
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -1005,6 +1347,8 @@ eventFrame:SetScript("OnEvent", function()
         AutoSpam:HandleCamping()
     elseif event == "CHAT_MSG_CHANNEL" then
         if AutoSpam.initialized then AutoSpam:OnChannelEcho(arg1, arg2) end
+    elseif event == "CHAT_MSG_ADDON" then
+        if AutoSpam.initialized then AutoSpam:OnAddonMessage(arg1, arg2, arg4) end
     elseif event == "CHAT_MSG_SYSTEM" then
         if AutoSpam.initialized then AutoSpam:OnSystemDuringWatch(arg1) end
     end
