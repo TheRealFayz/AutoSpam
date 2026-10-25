@@ -1558,6 +1558,82 @@ function AutoSpam:BuildSettingsPanel(p)
     end)
     self.setDry = dry
 
+    -- Whisper auto-reply
+    local rh = Label(p, "Whisper auto-reply", "GameFontNormal")
+    rh:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -104)
+
+    local rcb = CheckBox(p, "Reply to whispers while posting", 22)
+    rcb:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -122)
+    rcb:SetScript("OnClick", function()
+        AutoSpam.db.autoReply = this:GetChecked() and true or false
+    end)
+    rcb:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Whisper auto-reply")
+        GameTooltip:AddLine("Only replies while AutoSpam is posting and this box is checked.", 1, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    rcb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.setReply = rcb
+
+    local rl = Label(p, "Reply with:", "GameFontNormalSmall")
+    rl:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -152)
+    local rc = Label(p, "0 / " .. AutoSpam.REPLY_MAX, "GameFontNormalSmall")
+    rc:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -152)
+    self.setReplyCount = rc
+
+    local rbox = CreateFrame("Frame", nil, p)
+    rbox:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -166)
+    rbox:SetWidth(312)
+    rbox:SetHeight(100)
+    rbox:SetBackdrop(BOX_BACKDROP)
+    rbox:SetBackdropColor(0, 0, 0, 0.6)
+    rbox:SetBackdropBorderColor(0.4, 0.4, 0.4)
+    rbox:EnableMouse(true)
+
+    local reb = CreateFrame("EditBox", "AutoSpamReplyText", rbox)
+    reb:SetPoint("TOPLEFT", rbox, "TOPLEFT", 8, -8)
+    reb:SetWidth(296)
+    reb:SetHeight(84)
+    reb:SetMultiLine(true)
+    reb:SetAutoFocus(false)
+    reb:SetMaxLetters(AutoSpam.REPLY_MAX)
+    reb:SetFontObject(GameFontHighlight)
+    reb:EnableMouse(true)
+    reb:EnableKeyboard(true)
+    reb.autoSpamMax = AutoSpam.REPLY_MAX
+    reb:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    reb:SetScript("OnEditFocusGained", function()
+        AutoSpam.linkFocus = true
+        AutoSpam.linkTarget = this
+    end)
+    reb:SetScript("OnEditFocusLost", function()
+        AutoSpam.linkFocus = false
+    end)
+    reb:SetScript("OnTextChanged", function()
+        local t = this:GetText()
+        if string.find(t, "\n") then
+            -- Whispers can't carry line breaks; the next OnTextChanged picks up the cleaned text
+            this:SetText((string.gsub(t, "\n", " ")))
+            return
+        end
+        AutoSpam.db.replyText = t
+        local len = string.len(t)
+        AutoSpam.setReplyCount:SetText(len .. " / " .. AutoSpam.REPLY_MAX)
+        if len >= AutoSpam.REPLY_MAX - 15 then
+            AutoSpam.setReplyCount:SetTextColor(1, 0.5, 0)
+        else
+            AutoSpam.setReplyCount:SetTextColor(0, 1, 0)
+        end
+    end)
+    rbox:SetScript("OnMouseDown", function() AutoSpam.setReplyText:SetFocus() end)
+    self.setReplyText = reb
+
+    local rn = Label(p, "Each player gets the reply once every 5 minutes. Placeholders and item links work here too.", "GameFontDisableSmall")
+    rn:SetPoint("TOPLEFT", rbox, "BOTTOMLEFT", 4, -4)
+    rn:SetWidth(304)
+    rn:SetJustifyH("LEFT")
+
     local dbg = CheckBox(p, "Debug messages", 22)
     dbg:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 10, 10)
     dbg:SetScript("OnClick", function()
@@ -1573,6 +1649,10 @@ function AutoSpam:SettingsLoad()
     self.setIntervalLabel:SetText("Post every: |cffffffff" .. FormatTime(db.interval) .. "|r")
     self.setDry:SetChecked(db.dryRun and 1 or nil)
     self.setDebug:SetChecked(db.debugMode and 1 or nil)
+    self.setReply:SetChecked(db.autoReply and 1 or nil)
+    if self.setReplyText:GetText() ~= (db.replyText or "") then
+        self.setReplyText:SetText(db.replyText or "")
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1608,6 +1688,8 @@ local HELP_TEXT =
     "Each message has its own auto-invite switch, keywords and convert-to-raid option in the Editor. Turn it on for your raid LFM and leave it off for guild recruiting. A whisper that exactly matches one of that message's keywords gets an invite, but only while the message is enabled and posting is on.\n\n" ..
     "|cffffd100Sharing|r\n" ..
     "Open a message in the Editor and click Share. Type a player's name and click Send to player, or click Send to guild to offer it to everyone in your guild who has AutoSpam. They get a popup to accept or decline, and you see their answer in chat. Players outside your guild get it by whisper, which AutoSpam hides from chat. If they don't have AutoSpam, they get one whisper saying you tried to share a message. Shared messages arrive unchecked, and auto-invite settings aren't shared.\n\n" ..
+    "|cffffd100Whisper auto-reply|r\n" ..
+    "On the Settings tab, check Reply to whispers while posting and type your reply. Anyone who whispers you gets it, but only while AutoSpam is posting and the box is checked. Each player gets it once every 5 minutes. Placeholders and item links work in the reply, and dry run prints it to your chat instead of sending it.\n\n" ..
     "|cffffd100Dry run|r\n" ..
     "Turn on dry run in Settings to see what would be posted, printed only to your own chat. After each dry run post a popup reminds you, counts down to the next one, and has a button to go live.\n\n" ..
     "|cffffd100Commands|r\n" ..

@@ -12,6 +12,7 @@ You can also download AutoSpam from OctoWoW's [Gitea](https://octowow.st/git/Fay
 - **Any channels you want.** Check as many as you like per message: Say, Yell, Guild, Officer, Party, Raid, World, or a custom channel you've joined.
 - **Placeholders.** Put `{GROUP}`, `{ZONE}`, `{TIME}`, `{NAME}` or `{GUILD}` in a message and it's filled in every time it posts. `{UTC Sunday 1300}` turns your local time into UTC so everyone can read it in their own time zone.
 - **Auto-invite per message.** Turn it on for your raid LFM and leave it off for guild recruiting. Each message has its own keywords and its own convert to raid option.
+- **Whisper auto-reply.** While you're posting, anyone who whispers you gets a reply you set up on the Settings tab.
 - **Sharing.** Send a message to any player by name, or offer it to everyone in your guild who has AutoSpam. They get a popup to accept or decline.
 - **Item links.** Shift-click items in your bags, on your character, or links in chat to drop them into a message.
 - **Safe logins.** If you logged out with posting still on, nothing posts when you log back in. A popup gives you 2 minutes to choose Post now, otherwise AutoSpam turns itself off.
@@ -62,6 +63,7 @@ Each message shows its channels, name, weight (if above 1), `(inv)` if auto-invi
 
 - **Post every** sets the time between posts, from 1 to 10 minutes in 30 second steps.
 - **Dry run** prints posts to your own chat instead of sending them.
+- **Reply to whispers while posting** and **Reply with** set up the whisper auto-reply. See below.
 - **Debug messages** prints extra detail to chat if you're tracking down a problem: which message is posting, when the timer fires and how many posts have gone out, and when each channel post shows up.
 
 <p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Settings.png?raw=true" alt="AutoSpam Settings tab"></p>
@@ -158,6 +160,21 @@ Auto-invite is set up on each message in the Editor.
 - **Convert to raid** turns your party into a raid when it's full so invites keep going out.
 
 Invites only happen while posting is running and the message is checked in the Messages list. You need to be the group leader (or a raid assistant) for invites to work, and the same player won't be invited twice within 10 seconds.
+
+## Whisper Auto-Reply
+
+Set it up on the **Settings** tab:
+
+1. Check **Reply to whispers while posting**.
+2. Type your reply in the **Reply with** box, up to 255 characters.
+
+AutoSpam only replies when both are true: posting is running, and the box is checked. Stop posting and the replies stop too.
+
+- Anyone who whispers you gets the reply, guildmates and friends included.
+- Each player gets it once every 5 minutes, so a back and forth conversation doesn't get a reply every time, and two auto-replies can't answer each other forever.
+- Placeholders like `{ZONE}` and `{UTC Sun 1300}` work in the reply, and you can shift-click item links into it.
+- Whispers that match a message's auto-invite keywords still get the invite, and the reply too.
+- With dry run on, the reply prints to your own chat instead of being sent.
 
 ## Sharing
 

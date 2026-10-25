@@ -20,6 +20,8 @@ local DEFAULT_KEYWORDS = "inv, invite, +1"
 AutoSpam.MAX_LEN = 511       -- longest message the editor and sender allow
 local CHANNEL_GAP = 1         -- seconds between channels when a message posts to several
 local RESUME_DELAY = 120     -- seconds before posting turns itself off after logging in while still running
+local REPLY_COOLDOWN = 300   -- seconds before the same player gets the auto-reply again
+AutoSpam.REPLY_MAX = 255     -- longest auto-reply; whispers stay inside the classic chat limit
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -94,6 +96,8 @@ function AutoSpam:Initialize()
     if db.debugMode == nil then db.debugMode = false end
     if db.dryRun == nil then db.dryRun = false end
     if not db.scale then db.scale = 1 end
+    if db.autoReply == nil then db.autoReply = false end
+    if not db.replyText then db.replyText = "" end
 
     -- Bring messages saved by older versions up to the current format
     for i = 1, table.getn(db.messages) do
@@ -143,6 +147,7 @@ function AutoSpam:Initialize()
     self.incoming = {}
     self.outgoing = {}
     self.offers = {}
+    self.recentReplies = {}
 end
 
 ---------------------------------------------------------------------------
@@ -697,6 +702,41 @@ function AutoSpam:IsInMyGroup(name)
     return false
 end
 
+---------------------------------------------------------------------------
+-- Whisper auto-reply. Two checks: posting has to be running, and replies
+-- have to be turned on in Settings. Each player gets it once per
+-- REPLY_COOLDOWN, which also stops two auto-replies from answering each
+-- other forever. Placeholders are filled in like in a post.
+---------------------------------------------------------------------------
+
+function AutoSpam:HandleAutoReply(text, sender)
+    local db = self.db
+    if not db.enabled or self.resumeHold then return end
+    if not db.autoReply then return end
+    if not sender or sender == "" or sender == UnitName("player") then return end
+    local reply = Trim(db.replyText or "")
+    if reply == "" then return end
+
+    local now = GetTime()
+    local last = self.recentReplies[sender]
+    if last and now - last < REPLY_COOLDOWN then return end
+    self.recentReplies[sender] = now
+
+    local out = self:ExpandText(reply)
+    if string.len(out) > self.REPLY_MAX then
+        Print("Your auto-reply runs over " .. self.REPLY_MAX .. " characters once placeholders are filled in, so it wasn't sent to " .. sender .. ".", 1, 0.3, 0.3)
+        return
+    end
+    if db.dryRun then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[AutoSpam dry run]|r |cffaaaaaaauto-reply to " .. sender .. ":|r " .. out)
+        return
+    end
+    SendChatMessage(out, "WHISPER", nil, sender)
+    if db.debugMode then
+        Print("Auto-replied to " .. sender .. ".", 0, 1, 1)
+    end
+end
+
 function AutoSpam:HandleWhisper(text, sender)
     if not text or not sender or sender == "" then return end
     if sender == UnitName("player") then return end
@@ -758,8 +798,9 @@ function AutoSpam:InsertLink(link)
     if not link or not self.linkFocus or not self.linkTarget then return false end
     if not self.linkTarget:IsVisible() then return false end
     local cur = self.linkTarget:GetText() or ""
-    if string.len(cur) + string.len(link) > self.MAX_LEN then
-        Print("Not enough room for that link (" .. self.MAX_LEN .. " character limit).", 1, 0.3, 0.3)
+    local limit = self.linkTarget.autoSpamMax or self.MAX_LEN
+    if string.len(cur) + string.len(link) > limit then
+        Print("Not enough room for that link (" .. limit .. " character limit).", 1, 0.3, 0.3)
         return true
     end
     self.linkTarget:Insert(link)
@@ -1339,6 +1380,7 @@ eventFrame:SetScript("OnEvent", function()
     elseif event == "CHAT_MSG_WHISPER" then
         if AutoSpam.initialized and not AutoSpam:OnShareWhisper(arg1, arg2) then
             AutoSpam:HandleWhisper(arg1, arg2)
+            AutoSpam:HandleAutoReply(arg1, arg2)
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Late enough that chat addons have set up their windows first
