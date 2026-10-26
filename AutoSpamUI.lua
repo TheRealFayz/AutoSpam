@@ -1431,6 +1431,40 @@ function AutoSpam:ScrollToCursor()
     end
 end
 
+-- Same as FitTextBox and ScrollToCursor, for the auto-reply box on Settings
+function AutoSpam:FitReplyBox()
+    local tb, sf, fs = self.setReplyText, self.setReplyScroll, self.setReplyMeasure
+    if not tb or not sf or not fs then return end
+    fs:SetText(tb:GetText() or "")
+    local need = (fs:GetHeight() or 0) + 8
+    local view = sf:GetHeight() or 84
+    local cursorBottom = (self.replyCursorTop or 0) + (self.replyCursorHeight or 0) + 4
+    if cursorBottom > need then need = cursorBottom end
+    if need < view then need = view end
+    tb:SetHeight(need)
+    sf:UpdateScrollChildRect()
+end
+
+function AutoSpam:ScrollReplyToCursor()
+    local sf = self.setReplyScroll
+    if not sf then return end
+    self:FitReplyBox()
+    local top = self.replyCursorTop or 0
+    local bottom = top + (self.replyCursorHeight or 14)
+    local cur = sf:GetVerticalScroll() or 0
+    local view = sf:GetHeight() or 84
+    local want = cur
+    if top < cur then
+        want = top
+    elseif bottom > cur + view then
+        want = bottom - view
+    end
+    if want ~= cur then
+        local bar = getglobal("AutoSpamReplyClipScrollBar")
+        if bar then bar:SetValue(want) else sf:SetVerticalScroll(want) end
+    end
+end
+
 function AutoSpam:OpenInEditor(m)
     if not m then return end
     if self.editMsg and m ~= self.editMsg and self:EditorIsDirty() then
@@ -1691,9 +1725,20 @@ function AutoSpam:BuildSettingsPanel(p)
     rbox:SetBackdropBorderColor(0.4, 0.4, 0.4)
     rbox:EnableMouse(true)
 
-    local reb = CreateFrame("EditBox", "AutoSpamReplyText", rbox)
-    reb:SetPoint("TOPLEFT", rbox, "TOPLEFT", 8, -8)
-    reb:SetWidth(296)
+    -- Scrolls like the Editor's message box once the reply is long
+    local rclip = CreateFrame("ScrollFrame", "AutoSpamReplyClip", rbox, "UIPanelScrollFrameTemplate")
+    rclip:SetPoint("TOPLEFT", rbox, "TOPLEFT", 8, -8)
+    rclip:SetPoint("BOTTOMRIGHT", rbox, "BOTTOMRIGHT", -28, 8)
+    self.setReplyScroll = rclip
+
+    local rmeasure = rbox:CreateFontString(nil, "BACKGROUND", "GameFontHighlight")
+    rmeasure:SetWidth(266)
+    rmeasure:SetJustifyH("LEFT")
+    rmeasure:Hide()
+    self.setReplyMeasure = rmeasure
+
+    local reb = CreateFrame("EditBox", "AutoSpamReplyText", rclip)
+    reb:SetWidth(270)
     reb:SetHeight(84)
     reb:SetMultiLine(true)
     reb:SetAutoFocus(false)
@@ -1725,7 +1770,14 @@ function AutoSpam:BuildSettingsPanel(p)
         else
             AutoSpam.setReplyCount:SetTextColor(0, 1, 0)
         end
+        AutoSpam:FitReplyBox()
     end)
+    reb:SetScript("OnCursorChanged", function()
+        AutoSpam.replyCursorTop = -(arg2 or 0)
+        AutoSpam.replyCursorHeight = arg4 or 14
+        AutoSpam:ScrollReplyToCursor()
+    end)
+    rclip:SetScrollChild(reb)
     rbox:SetScript("OnMouseDown", function() AutoSpam.setReplyText:SetFocus() end)
     self.setReplyText = reb
 
@@ -1752,6 +1804,10 @@ function AutoSpam:SettingsLoad()
     self.setReply:SetChecked(db.autoReply and 1 or nil)
     if self.setReplyText:GetText() ~= (db.replyText or "") then
         self.setReplyText:SetText(db.replyText or "")
+        self.replyCursorTop, self.replyCursorHeight = 0, 14
+        self:FitReplyBox()
+        local bar = getglobal("AutoSpamReplyClipScrollBar")
+        if bar then bar:SetValue(0) end
     end
 end
 
@@ -1789,7 +1845,7 @@ local HELP_TEXT =
     "|cffffd100Sharing|r\n" ..
     "Open a message in the Editor and click Share. Type a player's name and click Send to player, or click Send to guild to offer it to everyone in your guild who has AutoSpam. They get a popup to accept or decline, and you see their answer in chat. Players outside your guild get it by whisper, which AutoSpam hides from chat. If they don't have AutoSpam, they get one whisper saying you tried to share a message. Shared messages arrive unchecked, and auto-invite settings aren't shared.\n\n" ..
     "|cffffd100Whisper auto-reply|r\n" ..
-    "On the Settings tab, check Reply to whispers while posting and type your reply. Anyone who whispers you gets it, but only while AutoSpam is posting and the box is checked. Each player gets it once every 5 minutes. Placeholders and item links work in the reply, and dry run prints it to your chat instead of sending it.\n\n" ..
+    "On the Settings tab, check Reply to whispers while posting and type your reply. Anyone who whispers you gets it, but only while AutoSpam is posting and the box is checked. Each player gets it once every 5 minutes. The reply can be as long as a message. Placeholders and item links work in the reply, and dry run prints it to your chat instead of sending it.\n\n" ..
     "|cffffd100Dry run|r\n" ..
     "Turn on dry run in Settings to see what would be posted, printed only to your own chat. After each dry run post a popup reminds you, counts down to the next one, and has a button to go live.\n\n" ..
     "|cffffd100Commands|r\n" ..

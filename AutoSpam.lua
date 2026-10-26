@@ -21,9 +21,11 @@ AutoSpam.MAX_LEN = 511       -- longest message the editor and sender allow
 local CHANNEL_GAP = 1         -- seconds between channels when a message posts to several
 local RESUME_DELAY = 120     -- seconds before posting turns itself off after logging in while still running
 local REPLY_COOLDOWN = 300   -- seconds before the same player gets the auto-reply again
-AutoSpam.REPLY_MAX = 255     -- longest auto-reply; whispers stay inside the classic chat limit
+AutoSpam.REPLY_MAX = AutoSpam.MAX_LEN   -- auto-reply allows the same length as a message
 AutoSpam.GITHUB_URL = "https://github.com/TheRealFayz/AutoSpam"
 local STAR_MILESTONE = 100   -- live posts, across all characters, before the one-time GitHub star ask
+local STAR_LOGIN_WAIT = 60   -- never show the star ask in the first minute after logging in
+local STAR_CHECK_EVERY = 5   -- seconds between "is now a good time?" checks
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -607,15 +609,42 @@ function AutoSpam:PostNext()
         self.sentCount = self.sentCount + 1
         if not self.db.dryRun then
             self.db.totalSent = (self.db.totalSent or 0) + 1
-            -- One time only, ever, for the whole account
-            if self.db.totalSent >= STAR_MILESTONE and not self.db.starAsked and self.ShowStarPopup then
-                self:ShowStarPopup(true)
-            end
+            -- The star ask itself waits for a quiet moment; see CheckStarAsk
         end
     end
     self:RollNext()
     self:RefreshUI()
     return ok
+end
+
+---------------------------------------------------------------------------
+-- One-time GitHub star ask. Once the account reaches STAR_MILESTONE live
+-- posts it's due, but it only shows when the player isn't busy: not in
+-- combat, a party, a raid or battleground, an instance, dead, or on a
+-- flight, and not in the first minute after logging in. Until then it
+-- keeps waiting, across logins if need be.
+---------------------------------------------------------------------------
+
+function AutoSpam:IsPlayerFree()
+    if UnitAffectingCombat and UnitAffectingCombat("player") then return false end
+    if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then return false end
+    if IsInInstance and IsInInstance() then return false end
+    if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return false end
+    if UnitOnTaxi and UnitOnTaxi("player") then return false end
+    if self.resumeHold then return false end
+    if self.offerPopup and self.offerPopup:IsShown() then return false end
+    if self.shareDialog and self.shareDialog:IsShown() then return false end
+    return true
+end
+
+function AutoSpam:CheckStarAsk(now)
+    if self.db.starAsked or (self.db.totalSent or 0) < STAR_MILESTONE then return end
+    if now - (self.lastStarCheck or 0) < STAR_CHECK_EVERY then return end
+    self.lastStarCheck = now
+    if now - (self.loginTime or now) < STAR_LOGIN_WAIT then return end
+    if not self.ShowStarPopup or not self:IsPlayerFree() then return end
+    -- If a /autospam star preview is already open, this makes it the real ask
+    self:ShowStarPopup(true)
 end
 
 function AutoSpam:EndResumeHold()
@@ -905,6 +934,7 @@ tickFrame:SetScript("OnUpdate", function()
         AutoSpam:ProcessAddonQueue(now)
     end
     AutoSpam:CheckShares(now)
+    AutoSpam:CheckStarAsk(now)
 
     -- UIParent may show the logout popup after our event handler ran; hide it again
     if AutoSpam.campHideAt and now >= AutoSpam.campHideAt then
@@ -1387,6 +1417,7 @@ eventFrame:SetScript("OnEvent", function()
             end
         end
         AutoSpam.initialized = true
+        AutoSpam.loginTime = GetTime()
         AutoSpam:RollNext()
         AutoSpam:RefreshUI()
         Print("loaded. Type /autospam or click the minimap button.", 0, 1, 1)
