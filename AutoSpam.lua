@@ -22,6 +22,8 @@ local CHANNEL_GAP = 1         -- seconds between channels when a message posts t
 local RESUME_DELAY = 120     -- seconds before posting turns itself off after logging in while still running
 local REPLY_COOLDOWN = 300   -- seconds before the same player gets the auto-reply again
 AutoSpam.REPLY_MAX = 255     -- longest auto-reply; whispers stay inside the classic chat limit
+AutoSpam.GITHUB_URL = "https://github.com/TheRealFayz/AutoSpam"
+local STAR_MILESTONE = 100   -- live posts, across all characters, before the one-time GitHub star ask
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -98,6 +100,7 @@ function AutoSpam:Initialize()
     if not db.scale then db.scale = 1 end
     if db.autoReply == nil then db.autoReply = false end
     if not db.replyText then db.replyText = "" end
+    if not db.totalSent then db.totalSent = 0 end   -- live posts ever, account wide
 
     -- Bring messages saved by older versions up to the current format
     for i = 1, table.getn(db.messages) do
@@ -600,7 +603,16 @@ function AutoSpam:PostNext()
         Print("Posting '" .. m.name .. "'.", 0, 1, 1)
     end
     local ok = self:SendText(m)
-    if ok then self.sentCount = self.sentCount + 1 end
+    if ok then
+        self.sentCount = self.sentCount + 1
+        if not self.db.dryRun then
+            self.db.totalSent = (self.db.totalSent or 0) + 1
+            -- One time only, ever, for the whole account
+            if self.db.totalSent >= STAR_MILESTONE and not self.db.starAsked and self.ShowStarPopup then
+                self:ShowStarPopup(true)
+            end
+        end
+    end
     self:RollNext()
     self:RefreshUI()
     return ok
@@ -931,6 +943,11 @@ SlashCmdList["AUTOSPAM"] = function(msg)
         end
         Print("Your PC: " .. pc .. "   UTC: " .. utc)
         Print("Sun 1300 your time = " .. (AutoSpam:ConvertToUTC("Sun 1300") or "?"))
+    elseif cmd == "star" and AutoSpam.db.debugMode then
+        -- Shows the GitHub star popup on demand, for testing and review.
+        -- Only with Debug messages on; otherwise it acts like any unknown option.
+        -- A test view: closing it doesn't count as the one real ask
+        if AutoSpam.ShowStarPopup then AutoSpam:ShowStarPopup(false) end
     elseif cmd == "help" then
         Print("/autospam: open the window. Options: start, stop, now, dryrun, time.")
     else

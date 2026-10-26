@@ -467,6 +467,106 @@ function AutoSpam:UpdateOfferPopup()
 end
 
 ---------------------------------------------------------------------------
+-- One-time GitHub star ask, shown after the account's 100th live post.
+-- Closing it in any way means it never shows again (saved account wide).
+---------------------------------------------------------------------------
+
+-- An edit box that shows the GitHub link. It can be selected and copied,
+-- but typing in it just puts the link back.
+local function LinkBox(name, parent, w)
+    local eb = InputBox(name, parent, w, 200)
+    eb:SetText(AutoSpam.GITHUB_URL)
+    eb:SetScript("OnTextChanged", function()
+        if this:GetText() ~= AutoSpam.GITHUB_URL then this:SetText(AutoSpam.GITHUB_URL) end
+    end)
+    eb:SetScript("OnEditFocusGained", function() this:HighlightText() end)
+    eb:SetScript("OnEnterPressed", function() this:ClearFocus() end)
+    return eb
+end
+
+function AutoSpam:CreateStarPopup()
+    local p = Dialog("AutoSpamStarPopup", "Copy", "No Thank You")
+    p:SetWidth(340)
+    p:ClearAllPoints()
+    p:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+    table.insert(UISpecialFrames, "AutoSpamStarPopup")   -- Escape closes it
+
+    -- Text starts below the corner X so the two never overlap
+    p.text:ClearAllPoints()
+    p.text:SetPoint("TOP", p, "TOP", 0, -34)
+    p.text:SetWidth(290)
+
+    local link = LinkBox("AutoSpamStarLink", p, 270)
+    link:SetScript("OnEscapePressed", function() AutoSpam.starPopup:Hide() end)
+    p.link = link
+
+    local note = Label(p, "", "GameFontNormalSmall")
+    note:SetPoint("TOP", link, "BOTTOM", 0, -6)
+    note:SetWidth(300)
+    p.note = note
+
+    -- Close X, shown once they've copied the link
+    local x = CreateFrame("Button", "AutoSpamStarClose", p, "UIPanelCloseButton")
+    x:SetPoint("TOPRIGHT", p, "TOPRIGHT", -5, -5)
+    x:SetScript("OnClick", function() AutoSpam.starPopup:Hide() end)
+    x:Hide()
+    p.closeX = x
+
+    p.button1:SetScript("OnClick", function() AutoSpam:StarCopy() end)
+    p.button2:SetScript("OnClick", function() AutoSpam.starPopup:Hide() end)
+    -- However it closes (button, Escape), it never comes back. Only the
+    -- natural one at the milestone counts; /autospam star test views don't.
+    p:SetScript("OnHide", function()
+        if this.natural then AutoSpam.db.starAsked = true end
+        this.natural = nil
+        this.link:ClearFocus()
+    end)
+
+    p.SetBody = function(self, body)
+        self.text:SetText(body)
+        local h = self.text:GetHeight() or 30
+        self.link:ClearAllPoints()
+        self.link:SetPoint("TOP", self, "TOP", 3, -(34 + h + 12))
+        self:SetHeight(h + 142)   -- room for a two line note under the link
+    end
+    self.starPopup = p
+end
+
+-- natural = true when shown by the post milestone, nil for /autospam star
+function AutoSpam:ShowStarPopup(natural)
+    if not self.starPopup then self:CreateStarPopup() end
+    local p = self.starPopup
+    if p:IsShown() then
+        if natural then p.natural = true end
+        return
+    end
+    p.natural = natural
+    local total = self.db.totalSent or 0
+    p:SetBody("AutoSpam has saved you from having to manually send " .. total .. " posts. If it's been useful, a star on GitHub helps other players find it. " ..
+        "This is the only time AutoSpam will ask. Once you close this window, it won't come up again for any character on this account.")
+    p.link:SetText(self.GITHUB_URL)
+    p.note:SetText("")
+    p.closeX:Hide()
+    p:Show()
+end
+
+function AutoSpam:StarCopy()
+    local p = self.starPopup
+    if not p then return end
+    if CopyToClipboard then
+        -- Some clients add a clipboard function; use it when it's there
+        CopyToClipboard(self.GITHUB_URL)
+        p.note:SetText("|cff33ff33Copied! Paste it into your browser and close this window with the X when you are ready. Thanks!|r")
+    else
+        -- Stock 1.12 can't write to the clipboard, so select the link for Ctrl+C
+        p.link:SetFocus()
+        p.link:HighlightText()
+        p.note:SetText("|cff33ff33Link selected. Press Ctrl+C to copy it, then close this window with the X when you are ready. Thanks!|r")
+    end
+    p.closeX:Show()
+end
+
+---------------------------------------------------------------------------
 -- Minimap button
 ---------------------------------------------------------------------------
 
@@ -1694,8 +1794,8 @@ local HELP_TEXT =
     "Turn on dry run in Settings to see what would be posted, printed only to your own chat. After each dry run post a popup reminds you, counts down to the next one, and has a button to go live.\n\n" ..
     "|cffffd100Commands|r\n" ..
     "/autospam opens this window. Add start, stop, now, or dryrun.\n\n" ..
-    "|cffffd100Questions or bugs?|r\n" ..
-    "github.com/TheRealFayz/AutoSpam\n"
+    "|cffffd100Questions, bugs, or want to say thanks?|r\n" ..
+    "Issues and stars both live on GitHub. If AutoSpam saves you some time, a star helps other players find it. Copy the link below:\n"
 
 function AutoSpam:BuildHelpPanel(p)
     local sf = CreateFrame("ScrollFrame", "AutoSpamHelpScroll", p, "UIPanelScrollFrameTemplate")
@@ -1713,7 +1813,12 @@ function AutoSpam:BuildHelpPanel(p)
     fs:SetJustifyV("TOP")
     fs:SetText(HELP_TEXT)
     local h = fs:GetHeight()
-    if h and h > 0 then child:SetHeight(h + 10) end
+
+    -- Copyable GitHub link under the help text
+    local link = LinkBox("AutoSpamHelpLink", child, 260)
+    link:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -4)
+
+    if h and h > 0 then child:SetHeight(h + 40) end
     sf:UpdateScrollChildRect()
 end
 

@@ -231,4 +231,6 @@ Messages from older versions of AutoSpam carry over automatically.
 
 Open an issue on GitHub and I'll take a look: https://github.com/TheRealFayz/AutoSpam
 
+If AutoSpam saves you some time, a star on GitHub helps other players find it.
+
 Happy posting!
