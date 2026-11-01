@@ -143,3 +143,14 @@ Open an issue on GitHub and I'll take a look: https://github.com/TheRealFayz/Aut
 If AutoSpam saves you some time, a star on GitHub helps other players find it.
 
 Happy posting!
+
+## More addons by Fayz
+
+All for OctoWoW and other 1.12 clients. A star on any of them is appreciated.
+
+- **[SHPlates](https://github.com/TheRealFayz/SHPlates)** is a highly customizable nameplate addon. Server threat, cast bars, debuff timers, combo points, raid marks and per-spec settings. Know who has aggro before the mob gets to your healer.
+- **[TotemNesia](https://github.com/TheRealFayz/TotemNesia)** is a totem management addon for Shaman.
+- **[Arcanum](https://github.com/TheRealFayz/Arcanum)** helps Mages manage their spells and items.
+- **[SHAlts](https://github.com/TheRealFayz/SHAlts)** is an alt manager for OctoWoW and other 1.12 clients. It keeps track of everything your characters own and lets you look at any of them from one window, no matter which character you are playing.
+- **[BigTimer](https://github.com/TheRealFayz/BigTimer)** is a see-through toolbar for starting BigWigs pull timers without writing macros, with built-in raid target marking.
+- **[TimeToDrink](https://github.com/TheRealFayz/TimeToDrink)** tells the tank when the healer is low on mana. It watches the healer you choose and posts a warning to party chat when their mana drops below your threshold.
