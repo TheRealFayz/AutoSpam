@@ -47,7 +47,7 @@ Each row shows the message's channels, name, weight (if above 1), `(inv)` if aut
 
 <p align="center"><img src="https://github.com/TheRealFayz/AutoSpam/blob/main/Images/AutoSpam_Editor.png?raw=true" alt="AutoSpam Editor tab"></p>
 
-- **Message text** holds up to 511 characters, after placeholders are filled in. Line breaks become spaces since chat can't send them.
+- **Message text** holds up to 255 characters, after placeholders are filled in. Line breaks become spaces since chat can't send them.
 - **Channel** opens a list where you check every channel the message should go to. **World** looks for a channel named World, LookingForGroup or LFG, and **Custom Channel** posts to any channel you've joined, by name or number. Extra channels go out one second apart.
 - **Weight** sets how often the message comes up. With weights 1, 5 and 2, the weight 5 message posts about five times as often as the weight 1 message.
 - **Save** keeps your changes, **Revert** undoes them, and **Share** sends the message to someone else. Edits only stick when you click Save, and AutoSpam asks before throwing away unsaved changes.
